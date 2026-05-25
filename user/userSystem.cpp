@@ -1,10 +1,23 @@
 #include "userSystem.hpp"
+#include <QCoreApplication>
+#include <QDir>
 
 UserSystem::UserSystem(){
     currentUserId = -1;
     currentAdminId = -1;
-    userDataFile = "users.dat";
-    adminDataFile = "admins.dat";
+    
+    // 首先获取应用程序目录路径
+    // 然后上一级目录，找到data目录
+    QString appDir = QCoreApplication::applicationDirPath();
+    QDir dir(appDir);
+    dir.cdUp();
+    
+    QString userDataPath = dir.absolutePath() + "/data/users.dat";
+    QString adminDataPath = dir.absolutePath() + "/data/admins.dat";
+    
+    userDataFile = userDataPath.toStdString();
+    adminDataFile = adminDataPath.toStdString();
+    
     loadUserData();
     loadAdminData();
 }

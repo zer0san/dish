@@ -89,14 +89,6 @@ build CMakeFiles/dish.dir/user/admin.cpp.obj: CXX_COMPILER__dish_unscanned_Debug
   OBJECT_DIR = CMakeFiles\dish.dir
   OBJECT_FILE_DIR = CMakeFiles\dish.dir\user
 
-build CMakeFiles/dish.dir/init/init.cpp.obj: CXX_COMPILER__dish_unscanned_Debug F$:/project/dish/init/init.cpp || cmake_object_order_depends_target_dish
-  DEFINES = -DMINGW_HAS_SECURE_API=1 -DQT_CORE_LIB -DQT_GUI_LIB -DQT_WIDGETS_LIB -DUNICODE -DWIN32 -DWIN64 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN64
-  DEP_FILE = CMakeFiles\dish.dir\init\init.cpp.obj.d
-  FLAGS = -g -fdiagnostics-color=always
-  INCLUDES = -isystem F:/project/dish/cmake-build-debug/dish_autogen/include -isystem F:/qt/6.11.1/mingw_64/include/QtCore -isystem F:/qt/6.11.1/mingw_64/include -isystem F:/qt/6.11.1/mingw_64/mkspecs/win32-g++ -isystem F:/qt/6.11.1/mingw_64/include/QtGui -isystem F:/qt/6.11.1/mingw_64/include/QtWidgets
-  OBJECT_DIR = CMakeFiles\dish.dir
-  OBJECT_FILE_DIR = CMakeFiles\dish.dir\init
-
 
 # =============================================================================
 # Link build statements for EXECUTABLE target dish
@@ -105,7 +97,7 @@ build CMakeFiles/dish.dir/init/init.cpp.obj: CXX_COMPILER__dish_unscanned_Debug 
 #############################################
 # Link the executable dish.exe
 
-build dish.exe: CXX_EXECUTABLE_LINKER__dish_Debug CMakeFiles/dish.dir/dish_autogen/mocs_compilation.cpp.obj CMakeFiles/dish.dir/main.cpp.obj CMakeFiles/dish.dir/user/user.cpp.obj CMakeFiles/dish.dir/user/userSystem.cpp.obj CMakeFiles/dish.dir/user/admin.cpp.obj CMakeFiles/dish.dir/init/init.cpp.obj | F$:/qt/6.11.1/mingw_64/lib/libQt6Widgets.a F$:/qt/6.11.1/mingw_64/lib/libQt6Gui.a F$:/qt/6.11.1/mingw_64/lib/libQt6Core.a || dish_autogen dish_autogen_timestamp_deps
+build dish.exe: CXX_EXECUTABLE_LINKER__dish_Debug CMakeFiles/dish.dir/dish_autogen/mocs_compilation.cpp.obj CMakeFiles/dish.dir/main.cpp.obj CMakeFiles/dish.dir/user/user.cpp.obj CMakeFiles/dish.dir/user/userSystem.cpp.obj CMakeFiles/dish.dir/user/admin.cpp.obj | F$:/qt/6.11.1/mingw_64/lib/libQt6Widgets.a F$:/qt/6.11.1/mingw_64/lib/libQt6Gui.a F$:/qt/6.11.1/mingw_64/lib/libQt6Core.a || dish_autogen dish_autogen_timestamp_deps
   FLAGS = -g
   LINK_LIBRARIES = F:/qt/6.11.1/mingw_64/lib/libQt6Widgets.a  F:/qt/6.11.1/mingw_64/lib/libQt6Gui.a  F:/qt/6.11.1/mingw_64/lib/libQt6Core.a  -lmpr  -luserenv  -ld3d11  -ldxgi  -ldxguid  -ld3d12  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\dish.dir

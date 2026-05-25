@@ -296,7 +296,27 @@
 	"CROSS_CONFIG" : false,
 	"DEP_FILE" : "F:/project/dish/cmake-build-debug/dish_autogen/deps",
 	"DEP_FILE_RULE_NAME" : "dish_autogen/timestamp",
-	"HEADERS" : [],
+	"HEADERS" : 
+	[
+		[
+			"F:/project/dish/user/admin.hpp",
+			"MU",
+			"PRRAAQMBDF/moc_admin.cpp",
+			null
+		],
+		[
+			"F:/project/dish/user/user.hpp",
+			"MU",
+			"PRRAAQMBDF/moc_user.cpp",
+			null
+		],
+		[
+			"F:/project/dish/user/userSystem.hpp",
+			"MU",
+			"PRRAAQMBDF/moc_userSystem.cpp",
+			null
+		]
+	],
 	"HEADER_EXTENSIONS" : [ "h", "hh", "h++", "hm", "hpp", "hxx", "in", "txx" ],
 	"INCLUDE_DIR" : "F:/project/dish/cmake-build-debug/dish_autogen/include",
 	"MOC_COMPILATION_FILE" : "F:/project/dish/cmake-build-debug/dish_autogen/mocs_compilation.cpp",
@@ -365,7 +385,13 @@
 	"QT_VERSION_MAJOR" : 6,
 	"QT_VERSION_MINOR" : 11,
 	"SETTINGS_FILE" : "F:/project/dish/cmake-build-debug/CMakeFiles/dish_autogen.dir/AutogenUsed.txt",
-	"SOURCES" : [],
+	"SOURCES" : 
+	[
+		[ "F:/project/dish/main.cpp", "MU", null ],
+		[ "F:/project/dish/user/admin.cpp", "MU", null ],
+		[ "F:/project/dish/user/user.cpp", "MU", null ],
+		[ "F:/project/dish/user/userSystem.cpp", "MU", null ]
+	],
 	"UIC_OPTIONS" : [],
 	"UIC_SEARCH_PATHS" : [],
 	"UIC_SKIP" : [],
