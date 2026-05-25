@@ -1,10 +1,13 @@
 #include <QApplication>
-#include <QPushButton>
+#include "terminal/TerminalWidget.h"
 
 int main(int argc, char *argv[]) {
     QApplication a(argc, argv);
-    QPushButton button("Hello world!", nullptr);
-    button.resize(200, 100);
-    button.show();
+
+    TerminalWidget terminal;
+    terminal.setWindowTitle("dish - Linux Terminal Simulator");
+    terminal.resize(800, 500);
+    terminal.show();
+
     return QApplication::exec();
 }

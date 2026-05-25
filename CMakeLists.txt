@@ -6,7 +6,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(CMAKE_PREFIX_PATH "F:/qt/6.11.1/mingw_64")
+set(CMAKE_PREFIX_PATH "F:/QT/6.8.1/mingw_64")
 
 find_package(Qt6 COMPONENTS
         Core
@@ -14,7 +14,12 @@ find_package(Qt6 COMPONENTS
         Widgets
         REQUIRED)
 
-add_executable(dish main.cpp)
+add_executable(dish
+    main.cpp
+    terminal/TerminalWidget.cpp
+    terminal/TerminalInput.cpp
+    terminal/CommandParser.cpp
+)
 target_link_libraries(dish
         Qt::Core
         Qt::Gui
