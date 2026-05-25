@@ -1,5 +1,0 @@
-F:/project/dish/cmake-build-debug/CMakeFiles/dish.dir
-F:/project/dish/cmake-build-debug/CMakeFiles/edit_cache.dir
-F:/project/dish/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-F:/project/dish/cmake-build-debug/CMakeFiles/dish_autogen_timestamp_deps.dir
-F:/project/dish/cmake-build-debug/CMakeFiles/dish_autogen.dir
