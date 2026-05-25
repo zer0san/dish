@@ -14,7 +14,14 @@ find_package(Qt6 COMPONENTS
         Widgets
         REQUIRED)
 
-add_executable(dish main.cpp)
+add_executable(dish main.cpp
+        user/user.cpp
+        user/user.hpp
+        user/userSystem.cpp
+        user/userSystem.hpp
+        user/admin.cpp
+        user/admin.hpp
+)
 target_link_libraries(dish
         Qt::Core
         Qt::Gui
