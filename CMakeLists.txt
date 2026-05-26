@@ -21,6 +21,12 @@ add_executable(dish main.cpp
         user/userSystem.hpp
         user/admin.cpp
         user/admin.hpp
+        terminal/TerminalWidget.h
+        terminal/TerminalWidget.cpp
+        terminal/TerminalInput.h
+        terminal/TerminalInput.cpp
+        terminal/CommandParser.h
+        terminal/CommandParser.cpp
 )
 target_link_libraries(dish
         Qt::Core
