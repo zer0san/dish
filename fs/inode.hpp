@@ -1,4 +1,6 @@
 
+#pragma once
+
 #include <cstdint>
 
 const int DIRECT_BLOCKS = 10;

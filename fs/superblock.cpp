@@ -29,7 +29,7 @@ void SuperBlock::init(uint32_t totalBlocks, uint32_t inodeCount) {
     root_inode = 1;
     group_size = GROUP_ENTRY_COUNT;
     inode_bitmap_block = 1;
-    data_start_block = 5; // 块4用于空闲块组，数据区从块5开始
-    free_list_head = data_start_block; // 空闲链表从块5开始
-    free_blocks = totalBlocks - data_start_block; // 空闲块数 = 总块数 - 前5块
+    data_start_block = 5; // 块4用于空闲块组头，数据区从块5开始
+    free_list_head = 4; // 空闲块组成组链接法头块存储在块4
+    free_blocks = totalBlocks - data_start_block; // 空闲块数 = 块5到末尾
 }

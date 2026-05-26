@@ -203,9 +203,10 @@ int FileSystem::allocBlock() {
         }
     }
     
-    // 如果当前组为空，切换到下一组
+    // 如果当前组为空，写回缓冲区后切换到下一组
     if (allocated == -1) {
         if (nextGroup == 0) return -1;  // 没有更多空闲块
+        writeBlock(superBlock.free_list_head, groupBlock);
         superBlock.free_list_head = nextGroup;
         return allocBlock();  // 递归分配
     }
@@ -252,12 +253,13 @@ void FileSystem::freeBlock(int blockNum) {
     // 更新链表头为新释放的块
     superBlock.free_list_head = blockNum;
     
-    // 清空原头块，只保留原头块号作为第一个空闲块
+    // 创建新头块：复制旧组所有条目，末尾追加原头块号
     char newHeadBlock[BLOCK_SIZE] = {0};
     uint32_t* newHeadNums = reinterpret_cast<uint32_t*>(newHeadBlock);
-    newHeadNums[0] = oldHead;  // 原头块成为空闲块
-    // 下一组指针保持不变（仍然指向原来的下一组）
-    newHeadNums[GROUP_ENTRY_COUNT] = nums[GROUP_ENTRY_COUNT];
+    for (int i = 0; i < GROUP_ENTRY_COUNT; ++i) {
+        newHeadNums[i] = nums[i];
+    }
+    newHeadNums[GROUP_ENTRY_COUNT] = oldHead;  // 原头块成为空闲块加入链表
     
     // 将更新后的头块写回原位置
     writeBlock(oldHead, newHeadBlock);
@@ -502,7 +504,8 @@ bool FileSystem::addDirEntry(int dirIno, const std::string& name, int ino) {
                 dentry->setName(name);
                 writeBlock(dirInode.direct_blocks[i], block);
                 
-                // 目录大小已在分配新块时更新，此处只需写回inode
+                // 补回被removeDirEntry扣减的目录大小
+                dirInode.size += DENTRY_SIZE;
                 writeInode(dirIno, dirInode);
                 return true;
             }

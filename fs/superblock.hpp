@@ -1,4 +1,6 @@
 
+#pragma once
+
 #include <cstdint>
 
 const int BLOCK_SIZE = 4096;
