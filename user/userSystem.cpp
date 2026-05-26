@@ -1,19 +1,31 @@
 #include "userSystem.hpp"
 #include <QCoreApplication>
 #include <QDir>
+#include <QStandardPaths>
 
 UserSystem::UserSystem(){
     currentUserId = -1;
     currentAdminId = -1;
     
-    // 首先获取应用程序目录路径
-    // 然后上一级目录，找到data目录
-    QString appDir = QCoreApplication::applicationDirPath();
-    QDir dir(appDir);
-    dir.cdUp();
+    /*
+    windows 下的文件路径
+    文件位置: C:\Users\用户名\AppData\Roaming\dish\data
+    文件名: users.dat, admins.dat
+
+    linux 下的文件路径
+    文件位置: ~/.local/share/dish/data/
+    文件名: users.dat, admins.dat
+    */
     
-    QString userDataPath = dir.absolutePath() + "/data/users.dat";
-    QString adminDataPath = dir.absolutePath() + "/data/admins.dat";
+    QString appDataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir dataDir(appDataPath + "/data");
+    
+    if(!dataDir.exists()){
+        dataDir.mkpath(".");
+    }
+    
+    QString userDataPath = dataDir.absolutePath() + "/users.dat";
+    QString adminDataPath = dataDir.absolutePath() + "/admins.dat";
     
     userDataFile = userDataPath.toStdString();
     adminDataFile = adminDataPath.toStdString();
