@@ -21,6 +21,14 @@ add_executable(dish main.cpp
         user/userSystem.hpp
         user/admin.cpp
         user/admin.hpp
+        fs/inode.cpp
+        fs/inode.hpp
+        fs/dentry.cpp
+        fs/dentry.hpp
+        fs/superblock.cpp
+        fs/superblock.hpp
+        fs/fs.cpp
+        fs/fs.hpp
 )
 target_link_libraries(dish
         Qt::Core

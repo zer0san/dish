@@ -52,9 +52,7 @@ struct INode {
     int i_type;            // 文件类型：文件/目录
     int i_size;            // 文件大小
     int i_blocks;          // 占用块数
-    int i_mode;            // 权限模式
     int i_uid;             // 所有者用户ID
-    int i_gid;            // 所属组ID
     time_t i_atime;        // 访问时间
     time_t i_mtime;        // 修改时间
     int i_block[10];       // 直接/间接块指针
