@@ -4,6 +4,10 @@
 #include <QKeyEvent>
 #include <QScrollBar>
 #include <QStringList>
+#include <QApplication>
+#include <QClipboard>
+#include <QMenu>
+#include <QContextMenuEvent>
 
 TerminalWidget::TerminalWidget(UserSystem *userSystem, FileSystem *fileSystem, const QString &diskPath, QWidget *parent)
     : QPlainTextEdit(parent)
@@ -56,8 +60,17 @@ void TerminalWidget::showPrompt() {
 void TerminalWidget::appendOutput(const QString &text) {
     moveCursor(QTextCursor::End);
     QTextCursor cursor = textCursor();
-    cursor.insertText(text + "\n");
+    
+    // 设置绿色格式
+    QTextCharFormat format;
+    format.setForeground(QColor("#00FF00"));
+    cursor.insertText(text + "\n", format);
     setTextCursor(cursor);
+    
+    // 自动滚动到底部
+    QScrollBar *scrollBar = verticalScrollBar();
+    scrollBar->setValue(scrollBar->maximum());
+    
     ensureCursorInInputArea();
 }
 
@@ -67,7 +80,18 @@ void TerminalWidget::appendColoredOutput(const QString &text, const QColor &colo
     QTextCharFormat format;
     format.setForeground(color);
     cursor.insertText(text + "\n", format);
+    
+    // 重置为默认绿色格式
+    QTextCharFormat defaultFormat;
+    defaultFormat.setForeground(QColor("#00FF00"));
+    cursor = textCursor();
+    cursor.setCharFormat(defaultFormat);
     setTextCursor(cursor);
+    
+    // 自动滚动到底部
+    QScrollBar *scrollBar = verticalScrollBar();
+    scrollBar->setValue(scrollBar->maximum());
+    
     ensureCursorInInputArea();
 }
 
@@ -102,6 +126,14 @@ QString TerminalWidget::currentInput() const {
 
 void TerminalWidget::clearTerminal() {
     QPlainTextEdit::clear();
+    
+    // 设置默认绿色格式
+    QTextCharFormat defaultFormat;
+    defaultFormat.setForeground(QColor("#00FF00"));
+    QTextCursor cursor = textCursor();
+    cursor.setCharFormat(defaultFormat);
+    setTextCursor(cursor);
+    
     showPrompt();
 }
 
@@ -127,6 +159,10 @@ void TerminalWidget::handleEnter() {
     }
 
     showPrompt();
+    
+    // 自动滚动到底部
+    QScrollBar *scrollBar = verticalScrollBar();
+    scrollBar->setValue(scrollBar->maximum());
 }
 
 void TerminalWidget::ensureCursorInInputArea() {
@@ -215,7 +251,7 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
     }
 
     if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_C) {
-        moveCursor(QTextCursor::End);
+        // 如果有选中文本，执行复制
         QTextCursor cursor = textCursor();
         QTextCharFormat fmt;
         fmt.setForeground(QColor("#FFFFFF"));
@@ -228,6 +264,26 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
 
     if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_L) {
         clearTerminal();
+        return;
+    }
+
+    if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_V) {
+        // 粘贴剪贴板内容
+        QString clipboardText = QApplication::clipboard()->text();
+        if (!clipboardText.isEmpty()) {
+            // 确保光标在输入区域
+            ensureCursorInInputArea();
+            
+            // 设置绿色格式
+            QTextCharFormat format;
+            format.setForeground(QColor("#00FF00"));
+            QTextCursor cursor = textCursor();
+            cursor.setCharFormat(format);
+            
+            // 插入粘贴的文本
+            cursor.insertText(clipboardText);
+            setTextCursor(cursor);
+        }
         return;
     }
 
@@ -286,7 +342,18 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
     }
 
     ensureCursorInInputArea();
+    
+    // 确保输入文本为绿色
+    QTextCharFormat format;
+    format.setForeground(QColor("#00FF00"));
+    QTextCursor cursor = textCursor();
+    cursor.setCharFormat(format);
+    setTextCursor(cursor);
+    
     QPlainTextEdit::keyPressEvent(event);
+    
+    // 输入后自动滚动到光标位置
+    ensureCursorVisible();
 }
 
 void TerminalWidget::handleTab() {
