@@ -7,12 +7,14 @@
 
 class TerminalInput;
 class CommandParser;
+class UserSystem;
+class FileSystem;
 
 class TerminalWidget : public QPlainTextEdit {
     Q_OBJECT
 
 public:
-    explicit TerminalWidget(QWidget *parent = nullptr);
+    explicit TerminalWidget(UserSystem *userSystem, FileSystem *fileSystem, const QString &diskPath, QWidget *parent = nullptr);
 
     void appendOutput(const QString &text);
     void appendColoredOutput(const QString &text, const QColor &color);

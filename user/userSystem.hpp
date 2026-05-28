@@ -36,6 +36,7 @@ struct UserSystem{
     User* getCurrentUser();
     Admin* getCurrentAdmin();
 
+    int findUidByUsername(const std::string& username) const;
     std::string encryptPassword(const std::string &password);
 
 private:
@@ -43,5 +44,6 @@ private:
     int generateAid();
     bool usernameExists(const std::string& username);
     bool adminUsernameExists(const std::string& username);
+    void initRootUser();
 };
 

@@ -32,13 +32,14 @@ UserSystem::UserSystem(){
     
     loadUserData();
     loadAdminData();
+    initRootUser();
 }
 
 int UserSystem::generateUid(){
     if(users.empty()){
         return 1000;
     }
-    int maxUid = 0;
+    int maxUid = 999; // 普通用户从 1000 开始，0-999 保留给系统用户
     for(const auto& user : users){
         if(user.getUid() > maxUid){
             maxUid = user.getUid();
@@ -320,4 +321,22 @@ std::string UserSystem::encryptPassword(const std::string &password){
         QCryptographicHash::Md5
     );
     return hash.toHex().toStdString();
+}
+
+void UserSystem::initRootUser(){
+    if(!usernameExists("root")){
+        std::string encryptedPassword = encryptPassword("root");
+        User rootUser(0, "root", encryptedPassword);
+        users.insert(users.begin(), rootUser);
+        saveUserData();
+    }
+}
+
+int UserSystem::findUidByUsername(const std::string& username) const{
+    for(const auto& user : users){
+        if(user.getUsername() == username){
+            return user.getUid();
+        }
+    }
+    return -1;
 }

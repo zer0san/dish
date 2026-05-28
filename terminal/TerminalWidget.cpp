@@ -5,15 +5,15 @@
 #include <QScrollBar>
 #include <QStringList>
 
-TerminalWidget::TerminalWidget(QWidget *parent)
+TerminalWidget::TerminalWidget(UserSystem *userSystem, FileSystem *fileSystem, const QString &diskPath, QWidget *parent)
     : QPlainTextEdit(parent)
     , m_input(new TerminalInput(this))
-    , m_parser(new CommandParser())
-    , m_prompt("user@dish:~$ ")
+    , m_parser(new CommandParser(userSystem, fileSystem, diskPath))
+    , m_prompt("guest@dish:~$ ")
     , m_promptLength(m_prompt.length())
-    , m_commands({"login", "logout", "mkdir", "rmdir", "cd", "ls",
+    , m_commands({"login", "logout", "register", "whoami", "mkdir", "rmdir", "cd", "ls",
                   "create", "delete", "open", "close", "read", "write",
-                  "seek", "chmod", "format", "stat", "pwd", "useradd", "help"})
+                  "seek", "chmod", "format", "stat", "pwd", "useradd", "mount", "help"})
 {
     initStyle();
     showWelcomeBanner();
@@ -78,7 +78,7 @@ void TerminalWidget::showWelcomeBanner() {
     appendColoredOutput(" | |_| | \\__ \\ | | | | | | (_) | | | |", QColor("#FFFFFF"));
     appendColoredOutput(" |____/|_|___|_| |_|_|_|\\___/|_| |_|", QColor("#FFFFFF"));
     appendColoredOutput("", QColor("#FFFFFF"));
-    appendColoredOutput(" dish - Linux File System Simulator v0.1", QColor("#00FF00"));
+    appendColoredOutput(" dish - Linux File System Simulator v0.2", QColor("#00FF00"));
     appendColoredOutput(" Type 'help' for available commands.", QColor("#00FF00"));
     appendColoredOutput("", QColor("#00FF00"));
 }
@@ -119,6 +119,11 @@ void TerminalWidget::handleEnter() {
         clearTerminal();
     } else if (!result.output.isEmpty()) {
         appendColoredOutput(result.output, result.color());
+    }
+
+    // 处理提示符变更（登录/登出/cd）
+    if (result.promptChanged) {
+        setPrompt(result.newPrompt);
     }
 
     showPrompt();
@@ -164,7 +169,20 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
             cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
             cursor.removeSelectedText();
             cursor.movePosition(QTextCursor::End);
-            cursor.insertText(m_prompt + prev);
+
+            // 白色粗体提示符
+            QTextCharFormat promptFmt;
+            promptFmt.setForeground(QColor("#FFFFFF"));
+            promptFmt.setFontWeight(QFont::Bold);
+            cursor.setCharFormat(promptFmt);
+            cursor.insertText(m_prompt);
+
+            // 绿色输入文本
+            QTextCharFormat inputFmt;
+            inputFmt.setForeground(QColor("#00FF00"));
+            cursor.setCharFormat(inputFmt);
+            cursor.insertText(prev);
+
             setTextCursor(cursor);
         }
         return;
@@ -178,7 +196,20 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
         cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
         cursor.removeSelectedText();
         cursor.movePosition(QTextCursor::End);
-        cursor.insertText(m_prompt + next);
+
+        // 白色粗体提示符
+        QTextCharFormat promptFmt;
+        promptFmt.setForeground(QColor("#FFFFFF"));
+        promptFmt.setFontWeight(QFont::Bold);
+        cursor.setCharFormat(promptFmt);
+        cursor.insertText(m_prompt);
+
+        // 绿色输入文本（可能为空）
+        QTextCharFormat inputFmt;
+        inputFmt.setForeground(QColor("#00FF00"));
+        cursor.setCharFormat(inputFmt);
+        cursor.insertText(next);
+
         setTextCursor(cursor);
         return;
     }
@@ -186,6 +217,9 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
     if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_C) {
         moveCursor(QTextCursor::End);
         QTextCursor cursor = textCursor();
+        QTextCharFormat fmt;
+        fmt.setForeground(QColor("#FFFFFF"));
+        cursor.setCharFormat(fmt);
         cursor.insertText("^C\n");
         setTextCursor(cursor);
         showPrompt();
@@ -278,6 +312,10 @@ void TerminalWidget::handleTab() {
         cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, m_promptLength);
         cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
         cursor.removeSelectedText();
+
+        QTextCharFormat fmt;
+        fmt.setForeground(QColor("#00FF00"));
+        cursor.setCharFormat(fmt);
         cursor.insertText(completion + " ");
         setTextCursor(cursor);
     } else {
@@ -289,7 +327,11 @@ void TerminalWidget::handleTab() {
             appendColoredOutput("  " + m, QColor("#FFFF55"));
         }
         showPrompt();
+
+        QTextCharFormat fmt;
+        fmt.setForeground(QColor("#00FF00"));
         cursor = textCursor();
+        cursor.setCharFormat(fmt);
         cursor.insertText(input);
         setTextCursor(cursor);
     }

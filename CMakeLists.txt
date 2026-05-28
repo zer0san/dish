@@ -29,6 +29,12 @@ add_executable(dish
         fs/superblock.hpp
         fs/fs.cpp
         fs/fs.hpp
+        terminal/TerminalWidget.h
+        terminal/TerminalWidget.cpp
+        terminal/TerminalInput.h
+        terminal/TerminalInput.cpp
+        terminal/CommandParser.h
+        terminal/CommandParser.cpp
         main.cpp
 )
 target_link_libraries(dish
