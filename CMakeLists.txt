@@ -6,7 +6,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(CMAKE_PREFIX_PATH "F:/qt/6.8.1/mingw_64")
+set(CMAKE_PREFIX_PATH "F:/qt/6.11.1/mingw_64")
 
 find_package(Qt6 COMPONENTS
         Core
@@ -36,6 +36,8 @@ add_executable(dish
         terminal/CommandParser.h
         terminal/CommandParser.cpp
         main.cpp
+        init.cpp
+        init.hpp
 )
 target_link_libraries(dish
         Qt::Core
