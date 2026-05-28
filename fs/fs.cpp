@@ -121,7 +121,8 @@ bool FileSystem::format(const std::string& diskPath, int totalBlocks) {
     uint32_t* nums = reinterpret_cast<uint32_t*>(groupBlock);
     int count = 0;
     // 将数据区所有块号存入空闲链表（从data_start_block开始，即块5）
-    for (int i = sb.data_start_block; i < totalBlocks; ++i) {
+    // 注意：GROUP_ENTRY_COUNT = 1023，索引0~1022用于存储块号，索引1023用于存储下一组指针
+    for (int i = sb.data_start_block; i < totalBlocks && count < GROUP_ENTRY_COUNT; ++i) {
         nums[count++] = i;
     }
     nums[GROUP_ENTRY_COUNT] = 0;  // 最后一个位置存储下一组指针，0表示链表结束
@@ -261,19 +262,15 @@ void FileSystem::freeBlock(int blockNum) {
     // 将当前组（包含所有块号和下一组指针）写入新释放的块
     writeBlock(blockNum, groupBlock);
     
-    // 更新链表头为新释放的块
-    superBlock.free_list_head = blockNum;
-    
-    // 创建新头块：复制旧组所有条目，末尾追加原头块号
+    // 创建新头块：只包含新释放的块号，并指向下一组（旧头块）
     char newHeadBlock[BLOCK_SIZE] = {0};
     uint32_t* newHeadNums = reinterpret_cast<uint32_t*>(newHeadBlock);
-    for (int i = 0; i < GROUP_ENTRY_COUNT; ++i) {
-        newHeadNums[i] = nums[i];
-    }
-    newHeadNums[GROUP_ENTRY_COUNT] = oldHead;  // 原头块成为空闲块加入链表
+    newHeadNums[0] = blockNum;  // 新释放的块号放入第一个位置
+    newHeadNums[GROUP_ENTRY_COUNT] = oldHead;  // 指向下一组
     
-    writeBlock(blockNum, newHeadBlock);
-    superBlock.free_list_head = blockNum;
+    // 更新链表头为新头块
+    writeBlock(oldHead, newHeadBlock);
+    superBlock.free_list_head = oldHead;
     superBlock.free_blocks++;
 }
 
@@ -514,9 +511,6 @@ bool FileSystem::addDirEntry(int dirIno, const std::string& name, int ino) {
                 dentry->ino = ino;
                 dentry->setName(name);
                 writeBlock(dirInode.direct_blocks[i], block);
-                
-                // 补回被removeDirEntry扣减的目录大小
-                dirInode.size += DENTRY_SIZE;
                 writeInode(dirIno, dirInode);
                 return true;
             }
