@@ -93,6 +93,7 @@ bool FileSystem::format(const std::string& diskPath, int totalBlocks) {
     SuperBlock sb;
     sb.init(totalBlocks, 100);  // 100个inode
     fs.seekp(0);
+    // 将超级块写入第0块
     fs.write(reinterpret_cast<const char*>(&sb), sizeof(SuperBlock));
     
     // 步骤4: 初始化inode位图并写入第1块
@@ -103,9 +104,18 @@ bool FileSystem::format(const std::string& diskPath, int totalBlocks) {
     fs.seekp(BLOCK_SIZE);
     fs.write(inodeBitmap, BLOCK_SIZE);
     
-    // inode表的第2块已经全部初始化为0
+    // 将更新后的超级块重新写入磁盘
+    fs.seekp(0);
+    fs.write(reinterpret_cast<const char*>(&sb), sizeof(SuperBlock));
+    
+    // 步骤5: 初始化inode表的第2，3块为0
+    char zeroBlock[BLOCK_SIZE] = {0};
+    fs.seekp(2 * BLOCK_SIZE);
+    fs.write(zeroBlock, BLOCK_SIZE);
+    fs.seekp(3 * BLOCK_SIZE);
+    fs.write(zeroBlock, BLOCK_SIZE);
 
-    // 步骤5: 初始化成组链接法空闲块链表并写入第4块
+    // 步骤6: 初始化成组链接法空闲块链表并写入第4块
     // 块4用于存储空闲块组，数据区从块5开始
     char groupBlock[BLOCK_SIZE] = {0};
     uint32_t* nums = reinterpret_cast<uint32_t*>(groupBlock);
@@ -114,13 +124,13 @@ bool FileSystem::format(const std::string& diskPath, int totalBlocks) {
     for (int i = sb.data_start_block; i < totalBlocks; ++i) {
         nums[count++] = i;
     }
-    nums[count] = 0;  // 0表示链表结束
+    nums[GROUP_ENTRY_COUNT] = 0;  // 最后一个位置存储下一组指针，0表示链表结束
     fs.seekp(4 * BLOCK_SIZE);  // 写入块4
     fs.write(groupBlock, BLOCK_SIZE);
     
     fs.close();
     
-    // 步骤6: 挂载并初始化根目录
+    // 步骤7: 挂载并初始化根目录
     if (mount(diskPath)) {
         return initRootDir();
     }
@@ -185,36 +195,38 @@ bool FileSystem::writeBlock(int blockNum, const char* buffer) {
 int FileSystem::allocBlock() {
     // 如果没有空闲块，返回失败
     if (superBlock.free_blocks == 0) return -1;
-    
-    // 读取当前空闲块组
-    char groupBlock[BLOCK_SIZE];
-    readBlock(superBlock.free_list_head, groupBlock);
-    
-    uint32_t* nums = reinterpret_cast<uint32_t*>(groupBlock);
-    uint32_t nextGroup = nums[GROUP_ENTRY_COUNT];  // 最后一个整数存储下一组指针
-    
-    // 从后向前查找第一个非零块号
-    int allocated = -1;
-    for (int i = GROUP_ENTRY_COUNT - 1; i >= 0; --i) {
-        if (nums[i] != 0) {
-            allocated = nums[i];
-            nums[i] = 0;  // 标记为已分配
-            break;
+
+    // 使用迭代方式避免递归调用
+    while (true) {
+        // 读取当前空闲块组
+        char groupBlock[BLOCK_SIZE];
+        readBlock(superBlock.free_list_head, groupBlock);
+
+        uint32_t* nums = reinterpret_cast<uint32_t*>(groupBlock);
+        uint32_t nextGroup = nums[GROUP_ENTRY_COUNT];  // 最后一个整数存储下一组指针
+        
+        // 从后向前查找第一个非零块号
+        int allocated = -1;
+        for (int i = GROUP_ENTRY_COUNT - 1; i >= 0; --i) {
+            if (nums[i] != 0) {
+                allocated = nums[i];
+                nums[i] = 0;  // 标记为已分配
+                break;
+            }
         }
-    }
-    
-    // 如果当前组为空，写回缓冲区后切换到下一组
-    if (allocated == -1) {
-        if (nextGroup == 0) return -1;  // 没有更多空闲块
+        
+        // 如果当前组为空，切换到下一组继续查找
+        if (allocated == -1) {
+            if (nextGroup == 0) return -1;  // 没有更多空闲块
+            superBlock.free_list_head = nextGroup;
+            continue;  // 继续循环
+        }
+        
+        // 写回更新后的组，并减少空闲块计数
         writeBlock(superBlock.free_list_head, groupBlock);
-        superBlock.free_list_head = nextGroup;
-        return allocBlock();  // 递归分配
+        superBlock.free_blocks--;
+        return allocated;
     }
-    
-    // 写回更新后的组，并减少空闲块计数
-    writeBlock(superBlock.free_list_head, groupBlock);
-    superBlock.free_blocks--;
-    return allocated;
 }
 
 /**
@@ -230,10 +242,10 @@ void FileSystem::freeBlock(int blockNum) {
     // 读取当前空闲块组
     char groupBlock[BLOCK_SIZE];
     readBlock(superBlock.free_list_head, groupBlock);
-    
+
     uint32_t* nums = reinterpret_cast<uint32_t*>(groupBlock);
     
-    // 从后往前查找第一个空位置插入，保持栈的FILO特性
+    // 从后往前查找第一个空位置插入（与allocBlock保持一致）
     for (int i = GROUP_ENTRY_COUNT - 1; i >= 0; --i) {
         if (nums[i] == 0) {
             nums[i] = blockNum;
@@ -243,8 +255,7 @@ void FileSystem::freeBlock(int blockNum) {
         }
     }
     
-    // 当前组已满，需要将当前组移动到新释放的块
-    // 保存原链表头
+    // 当前组已满，创建新组
     int oldHead = superBlock.free_list_head;
     
     // 将当前组（包含所有块号和下一组指针）写入新释放的块
@@ -261,8 +272,8 @@ void FileSystem::freeBlock(int blockNum) {
     }
     newHeadNums[GROUP_ENTRY_COUNT] = oldHead;  // 原头块成为空闲块加入链表
     
-    // 将更新后的头块写回原位置
-    writeBlock(oldHead, newHeadBlock);
+    writeBlock(blockNum, newHeadBlock);
+    superBlock.free_list_head = blockNum;
     superBlock.free_blocks++;
 }
 
@@ -276,7 +287,7 @@ int FileSystem::allocInode() {
     // 读取inode位图
     char bitmap[BLOCK_SIZE];
     readBlock(superBlock.inode_bitmap_block, bitmap);
-    
+
     // 遍历位图查找空闲inode（从1开始，0不用）
     for (int i = 1; i < superBlock.inode_count; ++i) {
         int byte = i / 8;   // 计算字节位置
@@ -299,7 +310,7 @@ int FileSystem::allocInode() {
 void FileSystem::freeInode(int ino) {
     char bitmap[BLOCK_SIZE];
     readBlock(superBlock.inode_bitmap_block, bitmap);
-    
+
     int byte = ino / 8;
     int bit = ino % 8;
     bitmap[byte] &= ~(1 << bit);  // 清除该位，标记为空闲
@@ -341,7 +352,7 @@ bool FileSystem::readInode(int ino, Inode& inode) {
     const int INODES_PER_BLOCK = BLOCK_SIZE / sizeof(Inode);  // 约85个inode/块
     int blockNum = 2 + (ino - 1) / INODES_PER_BLOCK;
     int offset = ((ino - 1) % INODES_PER_BLOCK) * sizeof(Inode);
-    
+
     char block[BLOCK_SIZE];
     if (!readBlock(blockNum, block)) {
         return false;
@@ -362,7 +373,7 @@ bool FileSystem::writeInode(int ino, const Inode& inode) {
     const int INODES_PER_BLOCK = BLOCK_SIZE / sizeof(Inode);
     int blockNum = 2 + (ino - 1) / INODES_PER_BLOCK;
     int offset = ((ino - 1) % INODES_PER_BLOCK) * sizeof(Inode);
-    
+
     char block[BLOCK_SIZE];
     if (!readBlock(blockNum, block)) {
         return false;
@@ -449,7 +460,7 @@ int FileSystem::findDirEntry(int dirIno, const std::string& name) {
     if (!readInode(dirIno, dirInode)) {
         return -1;
     }
-    
+
     // 遍历目录的所有数据块
     for (int i = 0; i < DIRECT_BLOCKS && dirInode.direct_blocks[i] != 0; ++i) {
         char block[BLOCK_SIZE];
@@ -478,7 +489,7 @@ bool FileSystem::addDirEntry(int dirIno, const std::string& name, int ino) {
     if (!readInode(dirIno, dirInode)) {
         return false;
     }
-    
+
     // 遍历目录的数据块
     for (int i = 0; i < DIRECT_BLOCKS; ++i) {
         // 如果当前块为空，分配新块
@@ -494,7 +505,7 @@ bool FileSystem::addDirEntry(int dirIno, const std::string& name, int ino) {
         // 读取目录块
         char block[BLOCK_SIZE];
         readBlock(dirInode.direct_blocks[i], block);
-        
+
         // 查找空目录项位置
         for (int j = 0; j < BLOCK_SIZE / DENTRY_SIZE; ++j) {
             Dentry* dentry = reinterpret_cast<Dentry*>(block + j * DENTRY_SIZE);
@@ -525,12 +536,12 @@ bool FileSystem::removeDirEntry(int dirIno, const std::string& name) {
     if (!readInode(dirIno, dirInode)) {
         return false;
     }
-    
+
     // 遍历目录的数据块
     for (int i = 0; i < DIRECT_BLOCKS && dirInode.direct_blocks[i] != 0; ++i) {
         char block[BLOCK_SIZE];
         readBlock(dirInode.direct_blocks[i], block);
-        
+
         // 查找并删除指定条目
         for (int j = 0; j < BLOCK_SIZE / DENTRY_SIZE; ++j) {
             Dentry* dentry = reinterpret_cast<Dentry*>(block + j * DENTRY_SIZE);
@@ -541,8 +552,8 @@ bool FileSystem::removeDirEntry(int dirIno, const std::string& name) {
                 memset(dentry->name, 0, MAX_FILENAME_LEN);
                 writeBlock(dirInode.direct_blocks[i], block);
                 
-                // 更新目录大小
-                dirInode.size -= DENTRY_SIZE;
+                // 目录大小是块大小的倍数，删除单个目录项不改变大小
+                // 只有释放整个块时才更新大小
                 writeInode(dirIno, dirInode);
                 return true;
             }
@@ -597,6 +608,11 @@ bool FileSystem::initRootDir() {
  * @return 文件的inode号，失败返回-1
  */
 int FileSystem::createFile(const std::string& path, int uid) {
+    // 检查路径是否已存在
+    if (resolvePath(path) != -1) {
+        return -1;  // 文件已存在
+    }
+
     // 解析路径
     std::vector<std::string> parts = splitPath(path);
     if (parts.empty()) {
@@ -614,13 +630,13 @@ int FileSystem::createFile(const std::string& path, int uid) {
             parentPath += "/" + parts[i];
         }
     }
-    
+
     // 获取父目录inode
     int parentIno = resolvePath(parentPath);
     if (parentIno == -1) {
         return -1;
     }
-    
+
     // 分配inode
     int ino = allocInode();
     if (ino == -1) {
@@ -652,13 +668,18 @@ bool FileSystem::deleteFile(const std::string& path) {
     if (ino == -1) {
         return false;
     }
-    
-    // 释放文件占用的所有数据块
+
+    // 检查是否为普通文件
     Inode inode = getInode(ino);
+    if (!(inode.mode & FILE_TYPE_REGULAR)) {
+        return false;
+    }
+
+    // 释放文件占用的所有数据块
     for (int i = 0; i < DIRECT_BLOCKS && inode.direct_blocks[i] != 0; ++i) {
         freeBlock(inode.direct_blocks[i]);
     }
-    
+
     // 获取父目录路径
     std::vector<std::string> parts = splitPath(path);
     std::string filename = parts.back();
@@ -671,13 +692,13 @@ bool FileSystem::deleteFile(const std::string& path) {
             parentPath += "/" + parts[i];
         }
     }
-    
+
     // 删除父目录中的条目并释放inode
     int parentIno = resolvePath(parentPath);
     if (parentIno == -1) {
         return false;
     }
-    
+
     // 先删除目录项，失败则不释放inode
     if (!removeDirEntry(parentIno, filename)) {
         return false;
@@ -696,11 +717,16 @@ bool FileSystem::deleteFile(const std::string& path) {
  * @return 实际读取的字节数，失败返回-1
  */
 int FileSystem::readFile(int ino, char* buffer, int offset, int size) {
+    // 参数有效性检查
+    if (buffer == nullptr || offset < 0 || size < 0) {
+        return -1;
+    }
+
     Inode inode;
     if (!readInode(ino, inode)) {
         return -1;
     }
-    
+
     // 如果偏移超过文件大小，返回0
     if (offset >= static_cast<int>(inode.size)) {
         return 0;
@@ -722,7 +748,7 @@ int FileSystem::readFile(int ino, char* buffer, int offset, int size) {
         // 读取数据块
         char block[BLOCK_SIZE];
         readBlock(inode.direct_blocks[blockIndex], block);
-        
+
         // 计算本次读取量
         int toRead = std::min(remaining, BLOCK_SIZE - blockOffset);
         toRead = std::min(toRead, static_cast<int>(inode.size) - offset);
@@ -752,11 +778,16 @@ int FileSystem::readFile(int ino, char* buffer, int offset, int size) {
  * @return 实际写入的字节数，失败返回-1
  */
 int FileSystem::writeFile(int ino, const char* buffer, int offset, int size) {
+    // 参数有效性检查
+    if (buffer == nullptr || offset < 0 || size < 0) {
+        return -1;
+    }
+
     Inode inode;
     if (!readInode(ino, inode)) {
         return -1;
     }
-    
+
     int totalWritten = 0;
     int remaining = size;
     int currentOffset = offset;
@@ -784,7 +815,7 @@ int FileSystem::writeFile(int ino, const char* buffer, int offset, int size) {
         // 读取现有块内容（保持未覆盖部分不变）
         char block[BLOCK_SIZE] = {0};
         readBlock(inode.direct_blocks[blockIndex], block);
-        
+
         // 计算本次写入量
         int toWrite = std::min(remaining, BLOCK_SIZE - blockOffset);
         
@@ -819,7 +850,7 @@ bool FileSystem::truncateFile(int ino, int newSize) {
     if (!readInode(ino, inode)) {
         return false;
     }
-    
+
     // 计算新旧大小对应的块数
     int oldBlocks = (inode.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
     int newBlocks = (newSize + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -848,6 +879,11 @@ bool FileSystem::truncateFile(int ino, int newSize) {
  * @return 目录的inode号，失败返回-1
  */
 int FileSystem::createDir(const std::string& path, int uid) {
+    // 检查路径是否已存在
+    if (resolvePath(path) != -1) {
+        return -1;  // 目录已存在
+    }
+
     // 解析路径
     std::vector<std::string> parts = splitPath(path);
     if (parts.empty()) {
@@ -865,13 +901,13 @@ int FileSystem::createDir(const std::string& path, int uid) {
             parentPath += "/" + parts[i];
         }
     }
-    
+
     // 获取父目录inode
     int parentIno = resolvePath(parentPath);
     if (parentIno == -1) {
         return -1;
     }
-    
+
     // 分配inode
     int ino = allocInode();
     if (ino == -1) {
@@ -933,15 +969,20 @@ bool FileSystem::deleteDir(const std::string& path) {
     if (ino == -1) {
         return false;
     }
-    
+
     Inode inode = getInode(ino);
-    
+
+    // 检查是否为目录类型
+    if (!(inode.mode & FILE_TYPE_DIR)) {
+        return false;
+    }
+
     // 第一步：先检查目录是否为空（只允许包含 . 和 ..）
     int entryCount = 0;
     for (int i = 0; i < DIRECT_BLOCKS && inode.direct_blocks[i] != 0; ++i) {
         char block[BLOCK_SIZE];
         readBlock(inode.direct_blocks[i], block);
-        
+
         // 统计目录项数量
         for (int j = 0; j < BLOCK_SIZE / DENTRY_SIZE; ++j) {
             Dentry* dentry = reinterpret_cast<Dentry*>(block + j * DENTRY_SIZE);
@@ -974,13 +1015,13 @@ bool FileSystem::deleteDir(const std::string& path) {
             parentPath += "/" + parts[i];
         }
     }
-    
+
     // 删除父目录中的条目并释放inode
     int parentIno = resolvePath(parentPath);
     if (parentIno == -1) {
         return false;
     }
-    
+
     // 先删除目录项，失败则不释放inode
     if (!removeDirEntry(parentIno, dirname)) {
         return false;
@@ -1005,12 +1046,12 @@ std::vector<Dentry> FileSystem::listDir(const std::string& path) {
     }
     
     Inode inode = getInode(ino);
-    
+
     // 遍历所有目录块
     for (int i = 0; i < DIRECT_BLOCKS && inode.direct_blocks[i] != 0; ++i) {
         char block[BLOCK_SIZE];
         readBlock(inode.direct_blocks[i], block);
-        
+
         // 收集所有非空目录项
         for (int j = 0; j < BLOCK_SIZE / DENTRY_SIZE; ++j) {
             Dentry* dentry = reinterpret_cast<Dentry*>(block + j * DENTRY_SIZE);
@@ -1036,7 +1077,7 @@ std::vector<Dentry> FileSystem::listDir(const std::string& path) {
  */
 bool FileSystem::checkPermission(int ino, int uid, int permission) {
     Inode inode = getInode(ino);
-    
+
     // root用户具有所有权限
     if (uid == 0) {
         return true;
