@@ -75,7 +75,7 @@ void testFileSystem() {
     bool formatResult = fs.format(diskPath, 100);
     std::cout << "   格式化结果: " << (formatResult ? "成功" : "失败") << std::endl;
     printSeparator();
-    
+
     std::cout << "2. 创建目录" << std::endl;
     int homeIno = fs.createDir("/home", 0);
     std::cout << "   创建 /home: " << (homeIno > 0 ? "成功 (ino=" + std::to_string(homeIno) + ")" : "失败") << std::endl;
