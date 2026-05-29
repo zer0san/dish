@@ -253,12 +253,28 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
     if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_C) {
         // 如果有选中文本，执行复制
         QTextCursor cursor = textCursor();
+        if (cursor.hasSelection()) {
+            QApplication::clipboard()->setText(cursor.selectedText());
+            return;
+        }
+        // 无选中文本，显示 ^C 并换行（中断当前输入）
         QTextCharFormat fmt;
         fmt.setForeground(QColor("#FFFFFF"));
         cursor.setCharFormat(fmt);
         cursor.insertText("^C\n");
         setTextCursor(cursor);
         showPrompt();
+        return;
+    }
+
+    if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_A) {
+        // 全选当前输入行
+        QTextCursor cursor = textCursor();
+        cursor.movePosition(QTextCursor::End);
+        cursor.movePosition(QTextCursor::StartOfBlock);
+        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, m_promptLength);
+        cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
+        setTextCursor(cursor);
         return;
     }
 
@@ -413,7 +429,12 @@ void TerminalWidget::mousePressEvent(QMouseEvent *event) {
     int blockStart = cursor.position();
     int inputStart = blockStart + m_promptLength;
     if (pos < inputStart) {
+        // 点击在提示符区域，强制光标到输入区开头
         cursor.setPosition(inputStart);
+        setTextCursor(cursor);
+    } else {
+        // 点击在输入区域，恢复光标到点击位置
+        cursor.setPosition(pos);
         setTextCursor(cursor);
     }
 }
