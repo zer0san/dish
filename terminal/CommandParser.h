@@ -86,6 +86,7 @@ private:
     CommandResult cmdStat(const QStringList &args);
     CommandResult cmdPwd(const QStringList &args);
     CommandResult cmdMount(const QStringList &args);
+    CommandResult cmdMv(const QStringList &args);
 
     QMap<QString, CommandInfo> m_commands;
     UserSystem *m_userSystem;

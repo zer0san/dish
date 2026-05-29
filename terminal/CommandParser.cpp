@@ -185,6 +185,7 @@ void CommandParser::registerCommands() {
     m_commands["stat"]     = {"stat",     1,  1, "stat <path>",             "查看文件/目录信息"};
     m_commands["pwd"]      = {"pwd",      0,  0, "pwd",                     "显示当前路径"};
     m_commands["mount"]    = {"mount",    0,  1, "mount [disk]",            "挂载文件系统"};
+    m_commands["mv"]       = {"mv",       2,  2, "mv <src> <dst>",          "移动/重命名文件或目录"};
 }
 
 // ===== 执行与分发 =====
@@ -236,6 +237,7 @@ CommandResult CommandParser::dispatch(const QString &name, const QStringList &ar
     if (name == "stat")     return cmdStat(args);
     if (name == "pwd")      return cmdPwd(args);
     if (name == "mount")    return cmdMount(args);
+    if (name == "mv")       return cmdMv(args);
     return CommandResult::error("dish: 内部错误");
 }
 
@@ -731,4 +733,53 @@ CommandResult CommandParser::cmdStat(const QStringList &args) {
     output += "  修改时间: " + QString::number(inode.mtime) + "\n";
     output += "  访问时间: " + QString::number(inode.atime);
     return CommandResult::info(output);
+}
+
+CommandResult CommandParser::cmdMv(const QStringList &args) {
+    if (!m_fileSystem->isMounted()) {
+        return CommandResult::error("dish: 文件系统未挂载");
+    }
+
+    QString srcArg = args[0];
+    QString dstArg = args[1];
+
+    QString srcPath = normalizePath(resolvePath(srcArg));
+    QString dstPath = normalizePath(resolvePath(dstArg));
+
+    // 检查源是否存在
+    int srcIno = m_fileSystem->resolvePath(srcPath.toStdString());
+    if (srcIno == -1) {
+        return CommandResult::error("dish: mv: 无法访问 '" + srcArg + "': 没有那个文件或目录");
+    }
+
+    // 检查对源父目录的写权限
+    QString srcParentPath = srcPath.left(srcPath.lastIndexOf('/'));
+    if (srcParentPath.isEmpty()) srcParentPath = "/";
+    if (!canWrite(srcParentPath)) {
+        return CommandResult::error("dish: mv: 无法移动 '" + srcArg + "': 权限不足");
+    }
+
+    // 检查对目标父目录的写权限
+    int dstIno = m_fileSystem->resolvePath(dstPath.toStdString());
+    QString checkPath;
+    if (dstIno != -1) {
+        Inode dstInode = m_fileSystem->getInode(dstIno);
+        if (dstInode.mode & FILE_TYPE_DIR) {
+            checkPath = dstPath;
+        } else {
+            return CommandResult::error("dish: mv: 目标 '" + dstArg + "' 已存在且不是目录");
+        }
+    } else {
+        checkPath = dstPath.left(dstPath.lastIndexOf('/'));
+        if (checkPath.isEmpty()) checkPath = "/";
+    }
+    if (!canWrite(checkPath)) {
+        return CommandResult::error("dish: mv: 无法移动到 '" + dstArg + "': 权限不足");
+    }
+
+    // 执行移动
+    if (m_fileSystem->moveEntry(srcPath.toStdString(), dstPath.toStdString())) {
+        return CommandResult::success("'" + srcArg + "' -> '" + dstArg + "'");
+    }
+    return CommandResult::error("dish: mv: 移动失败");
 }

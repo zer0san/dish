@@ -25,6 +25,7 @@ public:
     
     int createDir(const std::string& path, int uid);
     bool deleteDir(const std::string& path);
+    bool moveEntry(const std::string& srcPath, const std::string& dstPath);
     std::vector<Dentry> listDir(const std::string& path);
     
     Inode getInode(int ino);

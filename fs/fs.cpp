@@ -1021,7 +1021,144 @@ bool FileSystem::deleteDir(const std::string& path) {
         return false;
     }
     freeInode(ino);
-    
+
+    return true;
+}
+
+/**
+ * @brief 移动/重命名文件或目录
+ * @param srcPath 源路径
+ * @param dstPath 目标路径
+ * @return 是否移动成功
+ *
+ * Linux mv 语义：
+ * 1. 如果目标是已存在的目录，将源移动到该目录下（保留原名）
+ * 2. 否则，将源移动到目标父目录下并重命名
+ * 3. 不能将目录移动到自身的子目录下
+ */
+bool FileSystem::moveEntry(const std::string& srcPath, const std::string& dstPath) {
+    // 解析源路径
+    int srcIno = resolvePath(srcPath);
+    if (srcIno == -1) {
+        return false;  // 源不存在
+    }
+
+    Inode srcInode = getInode(srcIno);
+
+    // 解析源的父目录
+    std::vector<std::string> srcParts = splitPath(srcPath);
+    std::string srcName = srcParts.back();
+    srcParts.pop_back();
+
+    std::string srcParentPath = "/";
+    if (!srcParts.empty()) {
+        srcParentPath = "/" + srcParts[0];
+        for (size_t i = 1; i < srcParts.size(); ++i) {
+            srcParentPath += "/" + srcParts[i];
+        }
+    }
+    int srcParentIno = resolvePath(srcParentPath);
+    if (srcParentIno == -1) {
+        return false;
+    }
+
+    // 解析目标路径
+    int dstIno = resolvePath(dstPath);
+    std::string finalDstName;
+    int dstParentIno;
+
+    if (dstIno != -1) {
+        Inode dstInode = getInode(dstIno);
+        // 目标是已存在的目录 -> 移动到该目录下
+        if (dstInode.mode & FILE_TYPE_DIR) {
+            dstParentIno = dstIno;
+            finalDstName = srcName;
+
+            // 检查目标目录下是否已有同名条目
+            if (findDirEntry(dstParentIno, finalDstName) != -1) {
+                return false;  // 已存在同名条目
+            }
+        } else {
+            return false;  // 目标是已存在的文件，不能覆盖
+        }
+    } else {
+        // 目标不存在 -> 移动到目标父目录下并重命名
+        std::vector<std::string> dstParts = splitPath(dstPath);
+        finalDstName = dstParts.back();
+        dstParts.pop_back();
+
+        std::string dstParentPath = "/";
+        if (!dstParts.empty()) {
+            dstParentPath = "/" + dstParts[0];
+            for (size_t i = 1; i < dstParts.size(); ++i) {
+                dstParentPath += "/" + dstParts[i];
+            }
+        }
+        dstParentIno = resolvePath(dstParentPath);
+        if (dstParentIno == -1) {
+            return false;  // 目标父目录不存在
+        }
+
+        // 检查目标目录下是否已有同名条目
+        if (findDirEntry(dstParentIno, finalDstName) != -1) {
+            return false;  // 已存在同名条目
+        }
+    }
+
+    // 如果是目录，检查不能移动到自身的子目录下
+    if (srcInode.mode & FILE_TYPE_DIR) {
+        int checkIno = dstParentIno;
+        while (checkIno != srcIno && checkIno != superBlock.root_inode) {
+            Inode checkInode = getInode(checkIno);
+            int parentIno = -1;
+            for (int i = 0; i < DIRECT_BLOCKS && checkInode.direct_blocks[i] != 0; ++i) {
+                char block[BLOCK_SIZE];
+                readBlock(checkInode.direct_blocks[i], block);
+                for (int j = 0; j < BLOCK_SIZE / DENTRY_SIZE; ++j) {
+                    Dentry* dentry = reinterpret_cast<Dentry*>(block + j * DENTRY_SIZE);
+                    if (dentry->ino != 0 && dentry->getName() == "..") {
+                        parentIno = dentry->ino;
+                        break;
+                    }
+                }
+                if (parentIno != -1) break;
+            }
+            if (parentIno == -1 || parentIno == checkIno) break;
+            checkIno = parentIno;
+        }
+        if (checkIno == srcIno) {
+            return false;  // 不能移动到自身的子目录
+        }
+    }
+
+    // 从源父目录移除条目
+    if (!removeDirEntry(srcParentIno, srcName)) {
+        return false;
+    }
+
+    // 添加到目标父目录
+    if (!addDirEntry(dstParentIno, finalDstName, srcIno)) {
+        // 回滚：恢复源父目录的条目
+        addDirEntry(srcParentIno, srcName, srcIno);
+        return false;
+    }
+
+    // 如果是目录，更新 .. 条目指向新的父目录
+    if (srcInode.mode & FILE_TYPE_DIR) {
+        for (int i = 0; i < DIRECT_BLOCKS && srcInode.direct_blocks[i] != 0; ++i) {
+            char block[BLOCK_SIZE];
+            readBlock(srcInode.direct_blocks[i], block);
+            for (int j = 0; j < BLOCK_SIZE / DENTRY_SIZE; ++j) {
+                Dentry* dentry = reinterpret_cast<Dentry*>(block + j * DENTRY_SIZE);
+                if (dentry->ino != 0 && dentry->getName() == "..") {
+                    dentry->ino = dstParentIno;
+                    writeBlock(srcInode.direct_blocks[i], block);
+                    break;
+                }
+            }
+        }
+    }
+
     return true;
 }
 
