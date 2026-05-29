@@ -28,6 +28,126 @@ FileSystem::~FileSystem() {
 }
 
 /**
+ * @brief 创建新的磁盘镜像文件
+ * @param imgPath 镜像文件路径
+ * @param totalBlocks 总块数
+ * @return 是否创建成功
+ * 
+ * 创建一个指定大小的空磁盘镜像文件，并初始化完整的文件系统结构：
+ * 1. 创建指定大小的文件
+ * 2. 初始化超级块
+ * 3. 初始化 inode 位图
+ * 4. 初始化成组链接法空闲链表
+ * 5. 初始化根目录
+ */
+bool FileSystem::createImage(const std::string& imgPath, int totalBlocks) {
+    // 步骤1: 创建并扩展磁盘文件到指定大小
+    std::fstream file(imgPath, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        return false;
+    }
+    // 使用稀疏文件技巧：定位到最后一块并写入一个字节
+    file.seekp((totalBlocks - 1) * BLOCK_SIZE);
+    char zero = 0;
+    file.write(&zero, 1);
+    file.close();
+    
+    // 步骤2: 以读写模式打开磁盘文件
+    std::fstream fs(imgPath, std::ios::in | std::ios::out | std::ios::binary);
+    if (!fs.is_open()) {
+        return false;
+    }
+    
+    // 步骤3: 初始化超级块并写入第0块
+    SuperBlock sb;
+    sb.init(totalBlocks, 100);  // 100个inode
+    fs.seekp(0);
+    // 将超级块写入第0块
+    fs.write(reinterpret_cast<const char*>(&sb), sizeof(SuperBlock));
+    
+    // 步骤4: 初始化inode位图并写入第1块
+    // inode编号从1开始，位图第1位对应inode 1
+    char inodeBitmap[BLOCK_SIZE] = {0};
+    inodeBitmap[0] |= (1 << 1);  // 设置第1位，表示inode 1（根目录）已使用
+    sb.free_inodes = 99;  // 同步更新内存中的空闲inode计数
+    fs.seekp(BLOCK_SIZE);
+    fs.write(inodeBitmap, BLOCK_SIZE);
+    
+    // 将更新后的超级块重新写入磁盘
+    fs.seekp(0);
+    fs.write(reinterpret_cast<const char*>(&sb), sizeof(SuperBlock));
+    
+    // 步骤5: 初始化inode表的第2，3块为0
+    char zeroBlock[BLOCK_SIZE] = {0};
+    fs.seekp(2 * BLOCK_SIZE);
+    fs.write(zeroBlock, BLOCK_SIZE);
+    fs.seekp(3 * BLOCK_SIZE);
+    fs.write(zeroBlock, BLOCK_SIZE);
+
+    // 步骤6: 创建根目录inode和数据块
+    // 创建根目录inode（inode 1）
+    Inode rootInode;
+    rootInode.init(1, FILE_TYPE_DIR | 0755, 0);  // 权限755，root用户
+    
+    // 分配根目录数据块（使用第一个数据块）
+    int rootBlock = sb.data_start_block;
+    rootInode.direct_blocks[0] = rootBlock;
+    rootInode.size = BLOCK_SIZE;
+    rootInode.block_count = 1;
+    
+    // 创建目录内容（包含 . 和 ..）
+    char dirBlock[BLOCK_SIZE] = {0};
+    
+    // "." 指向自己
+    Dentry* dentry0 = reinterpret_cast<Dentry*>(dirBlock);
+    dentry0->ino = 1;
+    dentry0->setName(".");
+    
+    // ".." 也指向自己（根目录的父目录是自己）
+    Dentry* dentry1 = reinterpret_cast<Dentry*>(dirBlock + DENTRY_SIZE);
+    dentry1->ino = 1;
+    dentry1->setName("..");
+    
+    // 写入根目录数据块
+    fs.seekp(rootBlock * BLOCK_SIZE);
+    fs.write(dirBlock, BLOCK_SIZE);
+    
+    // 写入根目录inode到inode表
+    const int INODES_PER_BLOCK = BLOCK_SIZE / sizeof(Inode);
+    int inodeBlockNum = 2 + (1 - 1) / INODES_PER_BLOCK;
+    int inodeOffset = ((1 - 1) % INODES_PER_BLOCK) * sizeof(Inode);
+    
+    char inodeBlock[BLOCK_SIZE] = {0};
+    fs.seekg(inodeBlockNum * BLOCK_SIZE);
+    fs.read(inodeBlock, BLOCK_SIZE);
+    memcpy(inodeBlock + inodeOffset, &rootInode, sizeof(Inode));
+    fs.seekp(inodeBlockNum * BLOCK_SIZE);
+    fs.write(inodeBlock, BLOCK_SIZE);
+    
+    // 步骤7: 初始化成组链接法空闲块链表并写入第4块
+    // 块4用于存储空闲块组，数据区从块5开始
+    char groupBlock[BLOCK_SIZE] = {0};
+    uint32_t* nums = reinterpret_cast<uint32_t*>(groupBlock);
+    int count = 0;
+    // 将数据区所有块号存入空闲链表（跳过根目录已使用的块）
+    // 注意：GROUP_ENTRY_COUNT = 1023，索引0~1022用于存储块号，索引1023用于存储下一组指针
+    for (int i = sb.data_start_block + 1; i < totalBlocks && count < GROUP_ENTRY_COUNT; ++i) {
+        nums[count++] = i;
+    }
+    nums[GROUP_ENTRY_COUNT] = 0;  // 最后一个位置存储下一组指针，0表示链表结束
+    sb.free_blocks = totalBlocks - sb.data_start_block - 1;  // 更新空闲块数（减去根目录使用的1块）
+    // 更新超级块中的空闲块计数
+    fs.seekp(0);
+    fs.write(reinterpret_cast<const char*>(&sb), sizeof(SuperBlock));
+    
+    fs.seekp(4 * BLOCK_SIZE);  // 写入块4
+    fs.write(groupBlock, BLOCK_SIZE);
+    
+    fs.close();
+    return true;
+}
+
+/**
  * @brief 挂载文件系统
  * @param diskPath 磁盘文件路径
  * @return 是否挂载成功

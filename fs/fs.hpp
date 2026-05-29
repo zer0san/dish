@@ -17,6 +17,8 @@ public:
     bool format(const std::string& diskPath, int totalBlocks);
     void unmount();
     
+    static bool createImage(const std::string& imgPath, int totalBlocks);
+    
     int createFile(const std::string& path, int uid);
     bool deleteFile(const std::string& path);
     int readFile(int ino, char* buffer, int offset, int size);

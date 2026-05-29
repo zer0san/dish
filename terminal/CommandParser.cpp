@@ -2,6 +2,9 @@
 #include "../user/userSystem.hpp"
 #include "../fs/fs.hpp"
 #include <cstring>
+#include <QFileInfo>
+#include <QDir>
+#include <QStandardPaths>
 
 // ===== CommandResult =====
 
@@ -185,7 +188,9 @@ void CommandParser::registerCommands() {
     m_commands["stat"]     = {"stat",     1,  1, "stat <path>",             "查看文件/目录信息"};
     m_commands["pwd"]      = {"pwd",      0,  0, "pwd",                     "显示当前路径"};
     m_commands["mount"]    = {"mount",    0,  1, "mount [disk]",            "挂载文件系统"};
+    m_commands["unmount"]  = {"unmount",  0,  0, "unmount",                 "卸载当前文件系统"};
     m_commands["mv"]       = {"mv",       2,  2, "mv <src> <dst>",          "移动/重命名文件或目录"};
+    m_commands["mkimg"]    = {"mkimg",    1,  2, "mkimg <path> [blocks]",   "创建新的磁盘镜像文件"};
 }
 
 // ===== 执行与分发 =====
@@ -237,7 +242,9 @@ CommandResult CommandParser::dispatch(const QString &name, const QStringList &ar
     if (name == "stat")     return cmdStat(args);
     if (name == "pwd")      return cmdPwd(args);
     if (name == "mount")    return cmdMount(args);
+    if (name == "unmount")  return cmdUnmount(args);
     if (name == "mv")       return cmdMv(args);
+    if (name == "mkimg")    return cmdMkimg(args);
     return CommandResult::error("dish: 内部错误");
 }
 
@@ -422,13 +429,42 @@ CommandResult CommandParser::cmdFormat(const QStringList &args) {
 
 CommandResult CommandParser::cmdMount(const QStringList &args) {
     if (m_fileSystem->isMounted()) {
-        return CommandResult::warning("dish: 文件系统已挂载");
+        return CommandResult::warning("dish: 文件系统已挂载，请先 unmount 再挂载其他镜像");
     }
     QString disk = args.isEmpty() ? m_diskPath : args[0];
     if (m_fileSystem->mount(disk.toStdString())) {
-        return CommandResult::success("文件系统已挂载: " + disk);
+        // 重置当前路径为根目录
+        m_currentPath = "/";
+        m_homePath = "";
+        m_lastPath = "/";
+        
+        CommandResult r = CommandResult::success("文件系统已挂载: " + disk);
+        r.promptChanged = true;
+        r.newPrompt = buildPrompt();
+        return r;
     }
-    return CommandResult::error("dish: mount: 挂载失败，请先 format");
+    return CommandResult::error("dish: mount: 挂载失败，请先 format 或检查镜像文件是否存在");
+}
+
+CommandResult CommandParser::cmdUnmount(const QStringList &args) {
+    Q_UNUSED(args)
+    
+    if (!m_fileSystem->isMounted()) {
+        return CommandResult::warning("dish: 没有挂载的文件系统");
+    }
+    
+    // 卸载文件系统
+    m_fileSystem->unmount();
+    
+    // 重置路径状态
+    m_currentPath = "/";
+    m_homePath = "";
+    m_lastPath = "/";
+    
+    CommandResult r = CommandResult::success("文件系统已卸载");
+    r.promptChanged = true;
+    r.newPrompt = buildPrompt();
+    return r;
 }
 
 CommandResult CommandParser::cmdMkdir(const QStringList &args) {
@@ -782,4 +818,63 @@ CommandResult CommandParser::cmdMv(const QStringList &args) {
         return CommandResult::success("'" + srcArg + "' -> '" + dstArg + "'");
     }
     return CommandResult::error("dish: mv: 移动失败");
+}
+
+CommandResult CommandParser::cmdMkimg(const QStringList &args) {
+    QString imgName = args[0];
+    int blocks = 100;  // 默认100块
+    
+    if (args.size() > 1) {
+        blocks = args[1].toInt();
+        if (blocks < 30) {
+            return CommandResult::error("dish: mkimg: 块数不能少于30");
+        }
+    }
+    
+    // 自动添加 .img 后缀（如果没有）
+    if (!imgName.endsWith(".img", Qt::CaseInsensitive)) {
+        imgName += ".img";
+    }
+    
+    // 获取本地数据目录路径
+    QString appDataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QString imagesDir = appDataPath + "/images";
+    
+    // 确保 images 目录存在
+    QDir dir(imagesDir);
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+    
+    // 构建完整的镜像文件路径
+    QString imgPath = imagesDir + "/" + imgName;
+    
+    // 检查文件是否已存在
+    QFileInfo fileInfo(imgPath);
+    if (fileInfo.exists()) {
+        return CommandResult::error("dish: mkimg: 文件 '" + imgName + "' 已存在于 " + imagesDir);
+    }
+    
+    // 调用 FileSystem 的静态方法创建镜像
+    if (FileSystem::createImage(imgPath.toStdString(), blocks)) {
+        qint64 fileSize = static_cast<qint64>(blocks) * 4096;  // 4KB per block
+        QString sizeStr;
+        if (fileSize >= 1024 * 1024 * 1024) {
+            sizeStr = QString::number(fileSize / (1024.0 * 1024.0 * 1024.0), 'f', 2) + " GB";
+        } else if (fileSize >= 1024 * 1024) {
+            sizeStr = QString::number(fileSize / (1024.0 * 1024.0), 'f', 2) + " MB";
+        } else {
+            sizeStr = QString::number(fileSize / 1024.0, 'f', 2) + " KB";
+        }
+        
+        return CommandResult::success("镜像文件创建成功并保存到本地:\n"
+                                      "  文件名: " + imgName + "\n"
+                                      "  保存路径: " + imagesDir + "\n"
+                                      "  总块数: " + QString::number(blocks) + "\n"
+                                      "  块大小: 4096 字节\n"
+                                      "  总大小: " + sizeStr + "\n"
+                                      "  提示: 使用 'mount " + imgPath + "' 挂载该镜像");
+    }
+    
+    return CommandResult::error("dish: mkimg: 创建镜像文件失败");
 }
