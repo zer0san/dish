@@ -126,15 +126,15 @@ QString TerminalWidget::currentInput() const {
 
 void TerminalWidget::clearTerminal() {
     QPlainTextEdit::clear();
-    
+
     // 设置默认绿色格式
     QTextCharFormat defaultFormat;
     defaultFormat.setForeground(QColor("#00FF00"));
     QTextCursor cursor = textCursor();
     cursor.setCharFormat(defaultFormat);
     setTextCursor(cursor);
-    
-    showPrompt();
+
+    // 注意：不在这里调用 showPrompt()，由 handleEnter() 统一处理
 }
 
 void TerminalWidget::handleEnter() {
@@ -264,6 +264,7 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
 
     if (event->modifiers() == Qt::ControlModifier && event->key() == Qt::Key_L) {
         clearTerminal();
+        showPrompt();
         return;
     }
 
@@ -271,15 +272,20 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
         // 粘贴剪贴板内容
         QString clipboardText = QApplication::clipboard()->text();
         if (!clipboardText.isEmpty()) {
-            // 确保光标在输入区域
+            // 移动到末尾并确保在输入区域
+            QTextCursor cursor = textCursor();
+            cursor.movePosition(QTextCursor::End);
+            setTextCursor(cursor);
+
+            // 检查光标是否在提示符之后
             ensureCursorInInputArea();
-            
+
             // 设置绿色格式
             QTextCharFormat format;
             format.setForeground(QColor("#00FF00"));
-            QTextCursor cursor = textCursor();
+            cursor = textCursor();
             cursor.setCharFormat(format);
-            
+
             // 插入粘贴的文本
             cursor.insertText(clipboardText);
             setTextCursor(cursor);

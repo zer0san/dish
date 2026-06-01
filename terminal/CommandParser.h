@@ -89,6 +89,10 @@ private:
     CommandResult cmdUnmount(const QStringList &args);
     CommandResult cmdMv(const QStringList &args);
     CommandResult cmdMkimg(const QStringList &args);
+    CommandResult cmdTree(const QStringList &args);
+
+    // 递归构建目录树
+    void buildTree(const QString &path, const QString &prefix, QString &output, bool isLast);
 
     QMap<QString, CommandInfo> m_commands;
     UserSystem *m_userSystem;

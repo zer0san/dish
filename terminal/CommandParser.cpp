@@ -152,7 +152,7 @@ bool CommandParser::createUserHome(const QString &username, int uid) {
         }
     }
 
-    // 创建 /home/<username> (owner=uid, mode=755)
+    // 创建 /home/<username> (owner=uid, mode=700 - 仅所有者可访问)
     QString homePath = "/home/" + username;
     if (m_fileSystem->resolvePath(homePath.toStdString()) != -1) return true;
 
@@ -160,7 +160,7 @@ bool CommandParser::createUserHome(const QString &username, int uid) {
     if (ino <= 0) return false;
 
     Inode inode = m_fileSystem->getInode(ino);
-    inode.mode = FILE_TYPE_DIR | 0755;
+    inode.mode = FILE_TYPE_DIR | 0700;  // 仅所有者可读写执行
     m_fileSystem->updateInode(ino, inode);
     return true;
 }
@@ -181,7 +181,7 @@ void CommandParser::registerCommands() {
     m_commands["ls"]       = {"ls",       0,  2, "ls [-l] [path]",          "列出目录内容"};
     m_commands["create"]   = {"create",   1,  1, "create <file>",           "创建文件"};
     m_commands["delete"]   = {"delete",   1,  1, "delete <file>",           "删除文件"};
-    m_commands["read"]     = {"read",     2,  2, "read <file> <size>",      "读取文件内容"};
+    m_commands["read"]     = {"read",     1,  2, "read <file> [size]",      "读取文件内容"};
     m_commands["write"]    = {"write",    2, -1, "write <file> <text>",     "写入文件"};
     m_commands["chmod"]    = {"chmod",    2,  2, "chmod <file> <mode>",     "修改权限（仅owner/root）"};
     m_commands["format"]   = {"format",   0,  1, "format [blocks]",         "格式化文件系统"};
@@ -191,6 +191,7 @@ void CommandParser::registerCommands() {
     m_commands["unmount"]  = {"unmount",  0,  0, "unmount",                 "卸载当前文件系统"};
     m_commands["mv"]       = {"mv",       2,  2, "mv <src> <dst>",          "移动/重命名文件或目录"};
     m_commands["mkimg"]    = {"mkimg",    1,  2, "mkimg <path> [blocks]",   "创建新的磁盘镜像文件"};
+    m_commands["tree"]     = {"tree",     0,  1, "tree [path]",             "显示目录树结构"};
 }
 
 // ===== 执行与分发 =====
@@ -245,6 +246,7 @@ CommandResult CommandParser::dispatch(const QString &name, const QStringList &ar
     if (name == "unmount")  return cmdUnmount(args);
     if (name == "mv")       return cmdMv(args);
     if (name == "mkimg")    return cmdMkimg(args);
+    if (name == "tree")     return cmdTree(args);
     return CommandResult::error("dish: 内部错误");
 }
 
@@ -313,11 +315,11 @@ CommandResult CommandParser::cmdLogin(const QStringList &args) {
     // 确保家目录存在
     if (m_fileSystem->isMounted() && m_fileSystem->resolvePath(m_homePath.toStdString()) == -1) {
         if (uid == 0) {
-            // root 家目录
+            // root 家目录 (权限 0700 - 仅 root 可访问)
             int ino = m_fileSystem->createDir("/root", 0);
             if (ino > 0) {
                 Inode inode = m_fileSystem->getInode(ino);
-                inode.mode = FILE_TYPE_DIR | 0755;
+                inode.mode = FILE_TYPE_DIR | 0700;
                 m_fileSystem->updateInode(ino, inode);
             }
         } else {
@@ -388,6 +390,11 @@ CommandResult CommandParser::cmdUseradd(const QStringList &args) {
 // ===== 文件系统命令 =====
 
 CommandResult CommandParser::cmdFormat(const QStringList &args) {
+    // 格式化需要 root 权限
+    if (!isRoot()) {
+        return CommandResult::error("dish: format: 权限不足，需要 root 用户");
+    }
+
     int blocks = 100;
     if (!args.isEmpty()) {
         blocks = args[0].toInt();
@@ -674,7 +681,6 @@ CommandResult CommandParser::cmdRead(const QStringList &args) {
         return CommandResult::error("dish: 文件系统未挂载");
     }
     QString path = normalizePath(resolvePath(args[0]));
-    int size = args[1].toInt();
 
     int ino = m_fileSystem->resolvePath(path.toStdString());
     if (ino == -1) {
@@ -684,6 +690,24 @@ CommandResult CommandParser::cmdRead(const QStringList &args) {
     // Linux: 需要读权限
     if (!canRead(path)) {
         return CommandResult::error("dish: read: 权限不足: " + path);
+    }
+
+    // 获取文件大小
+    Inode inode = m_fileSystem->getInode(ino);
+    int fileSize = static_cast<int>(inode.size);
+
+    // 如果指定了 size 参数，使用指定值；否则使用文件大小
+    int size = fileSize;
+    if (args.size() > 1) {
+        size = args[1].toInt();
+        if (size <= 0) {
+            return CommandResult::error("dish: read: 大小必须为正整数");
+        }
+    }
+
+    // 如果文件为空，直接返回
+    if (fileSize == 0) {
+        return CommandResult::info("(空文件)");
     }
 
     char *buf = new char[size + 1];
@@ -877,4 +901,130 @@ CommandResult CommandParser::cmdMkimg(const QStringList &args) {
     }
     
     return CommandResult::error("dish: mkimg: 创建镜像文件失败");
+}
+
+CommandResult CommandParser::cmdTree(const QStringList &args) {
+    if (!m_fileSystem->isMounted()) {
+        return CommandResult::error("dish: 文件系统未挂载");
+    }
+
+    QString path = args.isEmpty() ? m_currentPath : resolvePath(args[0]);
+    path = normalizePath(path);
+
+    // 检查路径是否存在
+    int ino = m_fileSystem->resolvePath(path.toStdString());
+    if (ino == -1) {
+        return CommandResult::error("dish: tree: '" + path + "': 没有那个文件或目录");
+    }
+
+    // 检查是否是目录
+    Inode inode = m_fileSystem->getInode(ino);
+    if (!(inode.mode & FILE_TYPE_DIR)) {
+        return CommandResult::error("dish: tree: '" + path + "': 不是目录");
+    }
+
+    // 检查权限
+    if (!canRead(path) || !canExecute(path)) {
+        return CommandResult::error("dish: tree: 无法访问 '" + path + "': 权限不足");
+    }
+
+    QString output;
+    output += path + "\n";
+
+    // 获取目录内容
+    std::vector<Dentry> entries = m_fileSystem->listDir(path.toStdString());
+
+    // 过滤掉 . 和 ..
+    std::vector<Dentry> filteredEntries;
+    for (const auto &entry : entries) {
+        QString name = QString::fromStdString(entry.getName());
+        if (name != "." && name != "..") {
+            filteredEntries.push_back(entry);
+        }
+    }
+
+    // 递归构建树
+    for (size_t i = 0; i < filteredEntries.size(); ++i) {
+        const auto &entry = filteredEntries[i];
+        QString name = QString::fromStdString(entry.getName());
+        Inode entryInode = m_fileSystem->getInode(entry.ino);
+        bool isLast = (i == filteredEntries.size() - 1);
+        bool isDir = (entryInode.mode & FILE_TYPE_DIR) != 0;
+
+        if (isLast) {
+            output += "└── " + name + (isDir ? "/" : "") + "\n";
+            if (isDir) {
+                buildTree(path + "/" + name, "    ", output, true);
+            }
+        } else {
+            output += "├── " + name + (isDir ? "/" : "") + "\n";
+            if (isDir) {
+                buildTree(path + "/" + name, "│   ", output, false);
+            }
+        }
+    }
+
+    // 统计目录和文件数量
+    int dirCount = 0;
+    int fileCount = 0;
+    for (const auto &entry : filteredEntries) {
+        Inode entryInode = m_fileSystem->getInode(entry.ino);
+        if (entryInode.mode & FILE_TYPE_DIR) {
+            dirCount++;
+            // 递归统计子目录
+            QString subPath = path + "/" + QString::fromStdString(entry.getName());
+            std::vector<Dentry> subEntries = m_fileSystem->listDir(subPath.toStdString());
+            for (const auto &subEntry : subEntries) {
+                QString subName = QString::fromStdString(subEntry.getName());
+                if (subName != "." && subName != "..") {
+                    Inode subInode = m_fileSystem->getInode(subEntry.ino);
+                    if (subInode.mode & FILE_TYPE_DIR) {
+                        dirCount++;
+                    } else {
+                        fileCount++;
+                    }
+                }
+            }
+        } else {
+            fileCount++;
+        }
+    }
+
+    output += "\n" + QString::number(dirCount) + " 个目录, " + QString::number(fileCount) + " 个文件";
+    return CommandResult::info(output);
+}
+
+void CommandParser::buildTree(const QString &path, const QString &prefix, QString &output, bool isLast) {
+    // 获取目录内容
+    std::vector<Dentry> entries = m_fileSystem->listDir(path.toStdString());
+
+    // 过滤掉 . 和 ..
+    std::vector<Dentry> filteredEntries;
+    for (const auto &entry : entries) {
+        QString name = QString::fromStdString(entry.getName());
+        if (name != "." && name != "..") {
+            filteredEntries.push_back(entry);
+        }
+    }
+
+    // 递归构建树
+    for (size_t i = 0; i < filteredEntries.size(); ++i) {
+        const auto &entry = filteredEntries[i];
+        QString name = QString::fromStdString(entry.getName());
+        Inode entryInode = m_fileSystem->getInode(entry.ino);
+        bool isEntryLast = (i == filteredEntries.size() - 1);
+        bool isDir = (entryInode.mode & FILE_TYPE_DIR) != 0;
+
+        if (isEntryLast) {
+            output += prefix + "└── " + name + (isDir ? "/" : "") + "\n";
+            if (isDir) {
+                buildTree(path + "/" + name, prefix + "    ", output, true);
+            }
+        } else {
+            output += prefix + "├── " + name + (isDir ? "/" : "") + "\n";
+            if (isDir) {
+                buildTree(path + "/" + name, prefix + "│   ", output, false);
+            }
+        }
+    }
 }
