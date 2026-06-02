@@ -1,3 +1,10 @@
+/**
+ * - 命令解析与分发
+ * - 路径解析与规范化
+ * - 用户权限检查
+ * - 22条shell命令实现
+ */
+
 #include "CommandParser.h"
 #include "../user/userSystem.hpp"
 #include "../fs/fs.hpp"
@@ -8,18 +15,42 @@
 
 // ===== CommandResult =====
 
+/**
+ * @brief 创建成功结果
+ * @param text 输出文本
+ */
 CommandResult CommandResult::success(const QString &text) {
     return {text, OutputType::Success, false, ""};
 }
+
+/**
+ * @brief 创建错误结果
+ * @param text 错误信息
+ */
 CommandResult CommandResult::error(const QString &text) {
     return {text, OutputType::Error, false, ""};
 }
+
+/**
+ * @brief 创建警告结果
+ * @param text 警告信息
+ */
 CommandResult CommandResult::warning(const QString &text) {
     return {text, OutputType::Warning, false, ""};
 }
+
+/**
+ * @brief 创建信息结果
+ * @param text 信息文本
+ */
 CommandResult CommandResult::info(const QString &text) {
     return {text, OutputType::Info, false, ""};
 }
+
+/**
+ * @brief 根据输出类型返回对应颜色
+ * Success=绿色, Error=红色, Warning=黄色, Info=白色
+ */
 QColor CommandResult::color() const {
     switch (type) {
         case OutputType::Success: return QColor("#00FF00");
@@ -30,8 +61,14 @@ QColor CommandResult::color() const {
     return QColor("#00FF00");
 }
 
-// ===== 构造 =====
-
+/**
+ * @brief 命令解析器构造函数
+ * @param userSystem 用户系统指针
+ * @param fileSystem 文件系统指针
+ * @param diskPath 默认磁盘镜像路径
+ *
+ * 初始化工作目录为根目录，注册所有命令
+ */
 CommandParser::CommandParser(UserSystem *userSystem, FileSystem *fileSystem, const QString &diskPath)
     : m_userSystem(userSystem)
     , m_fileSystem(fileSystem)
@@ -45,6 +82,11 @@ CommandParser::CommandParser(UserSystem *userSystem, FileSystem *fileSystem, con
 
 // ===== 路径与权限 =====
 
+/**
+ * @brief 解析用户输入的路径为绝对路径
+ * @param path 用户输入的路径（支持 ~、~/xxx、绝对路径、相对路径）
+ * @return 解析后的绝对路径
+ */
 QString CommandParser::resolvePath(const QString &path) const {
     if (path.isEmpty() || path == "~") {
         return m_homePath.isEmpty() ? "/" : m_homePath;
@@ -55,13 +97,18 @@ QString CommandParser::resolvePath(const QString &path) const {
     if (path.startsWith("/")) {
         return path;
     }
-    // 相对路径：基于当前目录
+    // 相对路径：基于当前目录拼接
     if (m_currentPath == "/") {
         return "/" + path;
     }
     return m_currentPath + "/" + path;
 }
 
+/**
+ * @brief 规范化路径，解析 .. 和 .
+ * @param path 绝对路径
+ * @return 规范化后的路径
+ */
 QString CommandParser::normalizePath(const QString &path) const {
     QStringList parts;
     for (const auto &p : path.split('/', Qt::SkipEmptyParts)) {
@@ -71,9 +118,15 @@ QString CommandParser::normalizePath(const QString &path) const {
             parts.append(p);
         }
     }
-    return "/" + parts.join("/");
+    return "/" +parts.join("/");
 }
 
+/**
+ * @brief 构建终端提示符
+ * @return 格式为 "user@dish:path$ " 的提示符字符串
+ *
+ * 家目录显示为 ~，子目录显示为 ~/subdir
+ */
 QString CommandParser::buildPrompt() const {
     QString user = "guest";
     if (m_userSystem->isLoggedIn()) {
@@ -92,16 +145,28 @@ QString CommandParser::buildPrompt() const {
     return user + "@dish:" + displayPath + "$ ";
 }
 
+/**
+ * @brief 获取当前登录用户的uid
+ * @return uid值，未登录返回-1
+ */
 int CommandParser::getCurrentUid() const {
     if (!m_userSystem->isLoggedIn()) return -1;
     User *u = m_userSystem->getCurrentUser();
     return u ? u->getUid() : -1;
 }
 
+/**
+ * @brief 判断当前用户是否为root
+ */
 bool CommandParser::isRoot() const {
     return getCurrentUid() == 0;
 }
 
+/**
+ * @brief 检查当前用户对指定路径是否有写权限
+ * @param path 文件/目录路径
+ * @return 是否有写权限
+ */
 bool CommandParser::canWrite(const QString &path) const {
     if (!m_fileSystem->isMounted()) return false;
     int uid = getCurrentUid();
@@ -111,6 +176,11 @@ bool CommandParser::canWrite(const QString &path) const {
     return m_fileSystem->checkPermission(ino, uid, PERM_WRITE);
 }
 
+/**
+ * @brief 检查当前用户对指定路径是否有读权限
+ * @param path 文件/目录路径
+ * @return 是否有读权限
+ */
 bool CommandParser::canRead(const QString &path) const {
     if (!m_fileSystem->isMounted()) return false;
     int uid = getCurrentUid();
@@ -120,6 +190,11 @@ bool CommandParser::canRead(const QString &path) const {
     return m_fileSystem->checkPermission(ino, uid, PERM_READ);
 }
 
+/**
+ * @brief 检查当前用户对指定路径是否有执行权限
+ * @param path 文件/目录路径
+ * @return 是否有执行权限
+ */
 bool CommandParser::canExecute(const QString &path) const {
     if (!m_fileSystem->isMounted()) return false;
     int uid = getCurrentUid();
@@ -129,6 +204,11 @@ bool CommandParser::canExecute(const QString &path) const {
     return m_fileSystem->checkPermission(ino, uid, PERM_EXEC);
 }
 
+/**
+ * @brief 检查当前用户是否为指定路径的所有者
+ * @param path 文件/目录路径
+ * @return 是否为所有者
+ */
 bool CommandParser::isOwner(const QString &path) const {
     if (!m_fileSystem->isMounted()) return false;
     int uid = getCurrentUid();
@@ -139,6 +219,14 @@ bool CommandParser::isOwner(const QString &path) const {
     return uid == (int)inode.uid;
 }
 
+/**
+ * @brief 为用户创建家目录
+ * @param username 用户名
+ * @param uid 用户ID
+ * @return 是否创建成功
+ *
+ * 确保 /home 存在，然后创建 /home/<username>，权限 0700（仅所有者可访问）
+ */
 bool CommandParser::createUserHome(const QString &username, int uid) {
     if (!m_fileSystem->isMounted()) return false;
 
@@ -167,6 +255,11 @@ bool CommandParser::createUserHome(const QString &username, int uid) {
 
 // ===== 命令注册 =====
 
+/**
+ * @brief 注册所有命令及其参数信息
+ *
+ * 每条命令记录：名称、最少参数、最多参数(-1表示无限制)、用法、描述
+ */
 void CommandParser::registerCommands() {
     m_commands["help"]     = {"help",     0,  0, "help",                    "显示所有可用命令"};
     m_commands["clear"]    = {"clear",    0,  0, "clear",                   "清屏"};
@@ -196,6 +289,13 @@ void CommandParser::registerCommands() {
 
 // ===== 执行与分发 =====
 
+/**
+ * @brief 执行用户输入的命令
+ * @param input 用户输入的完整命令字符串
+ * @return 命令执行结果
+ *
+ * 流程：解析命令名 -> 校验参数数量 -> 分发到具体命令函数
+ */
 CommandResult CommandParser::execute(const QString &input) {
     QString trimmed = input.trimmed();
     if (trimmed.isEmpty()) return CommandResult::success("");
@@ -222,6 +322,12 @@ CommandResult CommandParser::execute(const QString &input) {
     return dispatch(name, args);
 }
 
+/**
+ * @brief 根据命令名分发到对应的处理函数
+ * @param name 命令名
+ * @param args 参数列表
+ * @return 命令执行结果
+ */
 CommandResult CommandParser::dispatch(const QString &name, const QStringList &args) {
     if (name == "help")     return cmdHelp(args);
     if (name == "clear")    return cmdClear(args);
@@ -252,6 +358,9 @@ CommandResult CommandParser::dispatch(const QString &name, const QStringList &ar
 
 // ===== 基础命令 =====
 
+/**
+ * @brief help命令，显示所有可用命令列表
+ */
 CommandResult CommandParser::cmdHelp(const QStringList &) {
     QString output = "可用命令：\n";
     for (auto it = m_commands.constBegin(); it != m_commands.constEnd(); ++it) {
@@ -260,16 +369,26 @@ CommandResult CommandParser::cmdHelp(const QStringList &) {
     return CommandResult::info(output.trimmed());
 }
 
+/**
+ * @brief clear命令，发送换页符清屏
+ */
 CommandResult CommandParser::cmdClear(const QStringList &) {
     return CommandResult::success("\x0C");
 }
 
+/**
+ * @brief pwd命令，显示当前工作目录
+ */
 CommandResult CommandParser::cmdPwd(const QStringList &) {
     return CommandResult::success(m_currentPath);
 }
 
 // ===== 用户命令 =====
 
+/**
+ * @brief register命令，注册新用户并创建家目录
+ * @param args[0] 用户名, args[1] 密码
+ */
 CommandResult CommandParser::cmdRegister(const QStringList &args) {
     QString username = args[0];
     QString password = args[1];
@@ -293,6 +412,12 @@ CommandResult CommandParser::cmdRegister(const QStringList &args) {
                                   "家目录: /home/" + username);
 }
 
+/**
+ * @brief login命令，用户登录
+ * @param args[0] 用户名, args[1] 密码
+ *
+ * 登录后切换到用户家目录，更新终端提示符
+ */
 CommandResult CommandParser::cmdLogin(const QStringList &args) {
     if (m_userSystem->isLoggedIn()) {
         return CommandResult::error("dish: 已有用户登录，请先 logout");
@@ -336,6 +461,10 @@ CommandResult CommandParser::cmdLogin(const QStringList &args) {
     return r;
 }
 
+/**
+ * @brief logout命令，用户登出
+ * 重置路径状态，更新提示符
+ */
 CommandResult CommandParser::cmdLogout(const QStringList &) {
     if (!m_userSystem->isLoggedIn()) {
         return CommandResult::error("dish: 当前没有用户登录");
@@ -350,6 +479,9 @@ CommandResult CommandParser::cmdLogout(const QStringList &) {
     return r;
 }
 
+/**
+ * @brief whoami命令，显示当前登录用户名和uid
+ */
 CommandResult CommandParser::cmdWhoami(const QStringList &) {
     if (!m_userSystem->isLoggedIn()) {
         return CommandResult::info("(未登录)");
@@ -362,6 +494,10 @@ CommandResult CommandParser::cmdWhoami(const QStringList &) {
     return CommandResult::error("dish: 无法获取当前用户");
 }
 
+/**
+ * @brief useradd命令，添加新用户（仅root可执行）
+ * @param args[0] 用户名, args[1] 密码（可选，默认123456）
+ */
 CommandResult CommandParser::cmdUseradd(const QStringList &args) {
     // Linux: useradd 只有 root 可以执行
     if (!isRoot()) {
@@ -389,6 +525,12 @@ CommandResult CommandParser::cmdUseradd(const QStringList &args) {
 
 // ===== 文件系统命令 =====
 
+/**
+ * @brief format命令，格式化文件系统（仅root可执行）
+ * @param args[0] 总块数（可选，默认100，最少30）
+ *
+ * 格式化后创建标准Linux目录结构：/home /root /tmp /etc /var /usr
+ */
 CommandResult CommandParser::cmdFormat(const QStringList &args) {
     // 格式化需要 root 权限
     if (!isRoot()) {
@@ -434,6 +576,10 @@ CommandResult CommandParser::cmdFormat(const QStringList &args) {
                                   "已创建标准目录: /home /root /tmp /etc /var /usr");
 }
 
+/**
+ * @brief mount命令，挂载磁盘镜像
+ * @param args[0] 镜像路径（可选，默认使用初始化时的路径）
+ */
 CommandResult CommandParser::cmdMount(const QStringList &args) {
     if (m_fileSystem->isMounted()) {
         return CommandResult::warning("dish: 文件系统已挂载，请先 unmount 再挂载其他镜像");
@@ -453,6 +599,10 @@ CommandResult CommandParser::cmdMount(const QStringList &args) {
     return CommandResult::error("dish: mount: 挂载失败，请先 format 或检查镜像文件是否存在");
 }
 
+/**
+ * @brief unmount命令，卸载当前文件系统
+ * 同步超级块到磁盘，重置路径状态
+ */
 CommandResult CommandParser::cmdUnmount(const QStringList &args) {
     Q_UNUSED(args)
     
@@ -474,6 +624,12 @@ CommandResult CommandParser::cmdUnmount(const QStringList &args) {
     return r;
 }
 
+/**
+ * @brief mkdir命令，创建目录
+ * @param args[0] 目录路径
+ *
+ * 需要对父目录有写权限，默认权限 0755
+ */
 CommandResult CommandParser::cmdMkdir(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载，请先 format 或 mount");
@@ -500,6 +656,12 @@ CommandResult CommandParser::cmdMkdir(const QStringList &args) {
     return CommandResult::error("dish: mkdir: 创建失败: " + path);
 }
 
+/**
+ * @brief rmdir命令，删除空目录
+ * @param args[0] 目录路径
+ *
+ * 需要对父目录有写权限，只能删除空目录
+ */
 CommandResult CommandParser::cmdRmdir(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -519,6 +681,13 @@ CommandResult CommandParser::cmdRmdir(const QStringList &args) {
     return CommandResult::error("dish: rmdir: 删除失败，目录可能不为空或不存在");
 }
 
+/**
+ * @brief cd命令，切换工作目录
+ * @param args[0] 目标路径（可选，无参数回到家目录）
+ *
+ * 支持 ~（家目录）、-（上一个目录）、..（上级目录）
+ * 进入目录需要执行权限
+ */
 CommandResult CommandParser::cmdCd(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("cd: 文件系统未挂载，请先 format 或 mount");
@@ -582,6 +751,13 @@ CommandResult CommandParser::cmdCd(const QStringList &args) {
     return r;
 }
 
+/**
+ * @brief ls命令，列出目录内容
+ * @param args[-l] 长格式显示, args[path] 目标路径（可选，默认当前目录）
+ *
+ * 长格式显示：类型+权限、uid、大小、文件名
+ * 需要对目录有读权限和执行权限
+ */
 CommandResult CommandParser::cmdLs(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -635,6 +811,12 @@ CommandResult CommandParser::cmdLs(const QStringList &args) {
     return CommandResult::info(output.trimmed());
 }
 
+/**
+ * @brief create命令，创建空文件
+ * @param args[0] 文件路径
+ *
+ * 需要对父目录有写权限和执行权限，默认权限 0644
+ */
 CommandResult CommandParser::cmdCreate(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -657,6 +839,12 @@ CommandResult CommandParser::cmdCreate(const QStringList &args) {
     return CommandResult::error("dish: create: 创建失败: " + path);
 }
 
+/**
+ * @brief delete命令，删除文件
+ * @param args[0] 文件路径
+ *
+ * 需要对父目录有写权限和执行权限
+ */
 CommandResult CommandParser::cmdDelete(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -676,6 +864,12 @@ CommandResult CommandParser::cmdDelete(const QStringList &args) {
     return CommandResult::error("dish: delete: 删除失败: " + path);
 }
 
+/**
+ * @brief read命令，读取文件内容
+ * @param args[0] 文件路径, args[1] 读取大小（可选，默认读取全部）
+ *
+ * 需要对文件有读权限
+ */
 CommandResult CommandParser::cmdRead(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -722,6 +916,12 @@ CommandResult CommandParser::cmdRead(const QStringList &args) {
     return CommandResult::info(content);
 }
 
+/**
+ * @brief write命令，向文件追加写入内容
+ * @param args[0] 文件路径, args[1...] 要写入的文本
+ *
+ * 需要对文件有写权限，数据追加到文件末尾
+ */
 CommandResult CommandParser::cmdWrite(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -747,6 +947,12 @@ CommandResult CommandParser::cmdWrite(const QStringList &args) {
     return CommandResult::success("写入 " + QString::number(written) + " 字节到 " + path);
 }
 
+/**
+ * @brief chmod命令，修改文件/目录权限
+ * @param args[0] 文件路径, args[1] 八进制权限值（如 755）
+ *
+ * 只有文件所有者或root可以修改权限
+ */
 CommandResult CommandParser::cmdChmod(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -770,6 +976,12 @@ CommandResult CommandParser::cmdChmod(const QStringList &args) {
     return CommandResult::success("权限已修改: " + path + " -> " + QString::number(mode, 8));
 }
 
+/**
+ * @brief stat命令，查看文件/目录详细信息
+ * @param args[0] 文件/目录路径
+ *
+ * 显示：类型、inode号、权限、uid、大小、数据块数、时间戳
+ */
 CommandResult CommandParser::cmdStat(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -795,6 +1007,13 @@ CommandResult CommandParser::cmdStat(const QStringList &args) {
     return CommandResult::info(output);
 }
 
+/**
+ * @brief mv命令，移动/重命名文件或目录
+ * @param args[0] 源路径, args[1] 目标路径
+ *
+ * Linux mv语义：目标是目录则移入，否则重命名
+ * 需要对源父目录和目标父目录都有写权限
+ */
 CommandResult CommandParser::cmdMv(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -844,6 +1063,12 @@ CommandResult CommandParser::cmdMv(const QStringList &args) {
     return CommandResult::error("dish: mv: 移动失败");
 }
 
+/**
+ * @brief mkimg命令，创建新的磁盘镜像文件
+ * @param args[0] 镜像名称, args[1] 块数（可选，默认100，最少30）
+ *
+ * 镜像保存到本地 AppDataLocation/images/ 目录，自动添加 .img 后缀
+ */
 CommandResult CommandParser::cmdMkimg(const QStringList &args) {
     QString imgName = args[0];
     int blocks = 100;  // 默认100块
@@ -903,6 +1128,13 @@ CommandResult CommandParser::cmdMkimg(const QStringList &args) {
     return CommandResult::error("dish: mkimg: 创建镜像文件失败");
 }
 
+/**
+ * @brief tree命令，以树形结构显示目录内容
+ * @param args[0] 目标路径（可选，默认当前目录）
+ *
+ * 使用 └── ├── │ 等字符绘制树形结构，过滤 . 和 ..
+ * 需要对目录有读权限和执行权限
+ */
 CommandResult CommandParser::cmdTree(const QStringList &args) {
     if (!m_fileSystem->isMounted()) {
         return CommandResult::error("dish: 文件系统未挂载");
@@ -994,6 +1226,13 @@ CommandResult CommandParser::cmdTree(const QStringList &args) {
     return CommandResult::info(output);
 }
 
+/**
+ * @brief 递归构建目录树字符串
+ * @param path 当前目录路径
+ * @param prefix 行前缀（用于缩进和连接线）
+ * @param output 输出字符串（累加）
+ * @param isLast 是否为父目录的最后一个条目
+ */
 void CommandParser::buildTree(const QString &path, const QString &prefix, QString &output, bool isLast) {
     // 获取目录内容
     std::vector<Dentry> entries = m_fileSystem->listDir(path.toStdString());

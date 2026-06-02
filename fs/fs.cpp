@@ -783,7 +783,7 @@ bool FileSystem::deleteFile(const std::string& path) {
         return false;
     }
 
-    // 检查是否为普通文件
+// 检查是否为普通文件
     Inode inode = getInode(ino);
     if (!(inode.mode & FILE_TYPE_REGULAR)) {
         return false;
