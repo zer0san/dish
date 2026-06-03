@@ -1,3 +1,10 @@
+/**
+ * - Qt终端界面实现
+ * - 键盘事件处理（回车、退格、方向键、快捷键）
+ * - 命令自动补全
+ * - 命令历史导航
+ */
+
 #include "TerminalWidget.h"
 #include "TerminalInput.h"
 #include "CommandParser.h"
@@ -9,6 +16,15 @@
 #include <QMenu>
 #include <QContextMenuEvent>
 
+/**
+ * @brief 终端组件构造函数
+ * @param userSystem 用户系统指针
+ * @param fileSystem 文件系统指针
+ * @param diskPath 默认磁盘镜像路径
+ * @param parent 父窗口
+ *
+ * 初始化终端样式，显示欢迎信息和提示符
+ */
 TerminalWidget::TerminalWidget(UserSystem *userSystem, FileSystem *fileSystem, const QString &diskPath, QWidget *parent)
     : QPlainTextEdit(parent)
     , m_input(new TerminalInput(this))
@@ -24,6 +40,11 @@ TerminalWidget::TerminalWidget(UserSystem *userSystem, FileSystem *fileSystem, c
     showPrompt();
 }
 
+/**
+ * @brief 初始化终端样式
+ *
+ * 黑色背景、绿色文字、等宽字体、无边框
+ */
 void TerminalWidget::initStyle() {
     setStyleSheet(
         "QPlainTextEdit {"
@@ -37,10 +58,15 @@ void TerminalWidget::initStyle() {
     );
     setReadOnly(false);
     setWordWrapMode(QTextOption::WrapAnywhere);
-    setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 }
 
+/**
+ * @brief 在当前位置显示提示符
+ *
+ * 提示符用白色粗体显示，之后重置为绿色格式供用户输入
+ */
 void TerminalWidget::showPrompt() {
     moveCursor(QTextCursor::End);
     QTextCharFormat format;
@@ -57,6 +83,12 @@ void TerminalWidget::showPrompt() {
     setTextCursor(cursor);
 }
 
+/**
+ * @brief 追加绿色输出文本
+ * @param text 输出内容
+ *
+ * 自动换行并滚动到底部
+ */
 void TerminalWidget::appendOutput(const QString &text) {
     moveCursor(QTextCursor::End);
     QTextCursor cursor = textCursor();
@@ -74,6 +106,11 @@ void TerminalWidget::appendOutput(const QString &text) {
     ensureCursorInInputArea();
 }
 
+/**
+ * @brief 追加指定颜色的输出文本
+ * @param text 输出内容
+ * @param color 文字颜色
+ */
 void TerminalWidget::appendColoredOutput(const QString &text, const QColor &color) {
     moveCursor(QTextCursor::End);
     QTextCursor cursor = textCursor();
@@ -95,6 +132,11 @@ void TerminalWidget::appendColoredOutput(const QString &text, const QColor &colo
     ensureCursorInInputArea();
 }
 
+/**
+ * @brief 显示欢迎横幅
+ *
+ * ASCII art "dish" logo + 版本信息 + 使用提示
+ */
 void TerminalWidget::showWelcomeBanner() {
     appendColoredOutput("  ____  _     _     _", QColor("#FFFFFF"));
     appendColoredOutput(" |  _ \\(_)___| |__ | |__   ___  _ __", QColor("#FFFFFF"));
@@ -107,11 +149,19 @@ void TerminalWidget::showWelcomeBanner() {
     appendColoredOutput("", QColor("#00FF00"));
 }
 
+/**
+ * @brief 更新提示符内容
+ * @param prompt 新的提示符字符串
+ */
 void TerminalWidget::setPrompt(const QString &prompt) {
     m_prompt = prompt;
     m_promptLength = m_prompt.length();
 }
 
+/**
+ * @brief 获取当前行的用户输入内容
+ * @return 去除提示符后的输入文本
+ */
 QString TerminalWidget::currentInput() const {
     QTextCursor cursor = textCursor();
     cursor.movePosition(QTextCursor::End);
@@ -124,6 +174,9 @@ QString TerminalWidget::currentInput() const {
     return blockText;
 }
 
+/**
+ * @brief 清屏，重置为默认绿色格式
+ */
 void TerminalWidget::clearTerminal() {
     QPlainTextEdit::clear();
 
@@ -137,6 +190,11 @@ void TerminalWidget::clearTerminal() {
     // 注意：不在这里调用 showPrompt()，由 handleEnter() 统一处理
 }
 
+/**
+ * @brief 处理回车键
+ *
+ * 流程：获取输入 -> 记录历史 -> 执行命令 -> 显示结果 -> 更新提示符 -> 重新显示提示符
+ */
 void TerminalWidget::handleEnter() {
     QString input = currentInput();
     m_input->addHistory(input);
@@ -165,6 +223,11 @@ void TerminalWidget::handleEnter() {
     scrollBar->setValue(scrollBar->maximum());
 }
 
+/**
+ * @brief 确保光标在输入区域内（提示符之后）
+ *
+ * 防止用户点击或导航到提示符区域进行编辑
+ */
 void TerminalWidget::ensureCursorInInputArea() {
     QTextCursor cursor = textCursor();
     int pos = cursor.position();
@@ -178,6 +241,22 @@ void TerminalWidget::ensureCursorInInputArea() {
     }
 }
 
+/**
+ * @brief 键盘事件处理
+ * @param event 键盘事件
+ *
+ * 处理的按键：
+ * - Enter: 执行命令
+ * - Backspace: 删除字符（不越过提示符）
+ * - Up/Down: 命令历史导航
+ * - Ctrl+C: 取消当前输入
+ * - Ctrl+L: 清屏
+ * - Ctrl+V: 粘贴
+ * - Tab: 命令自动补全
+ * - Home/End: 跳转到行首/行尾
+ * - Left: 左移光标（不越过提示符）
+ * - Delete: 删除字符（不越过提示符）
+ */
 void TerminalWidget::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
         handleEnter();
@@ -362,6 +441,12 @@ void TerminalWidget::keyPressEvent(QKeyEvent *event) {
     ensureCursorVisible();
 }
 
+/**
+ * @brief 处理Tab键自动补全
+ *
+ * 唯一匹配时直接补全并追加空格
+ * 多个匹配时显示候选列表并保持原输入
+ */
 void TerminalWidget::handleTab() {
     QString input = currentInput();
     QStringList parts = input.split(' ', Qt::SkipEmptyParts);
@@ -410,6 +495,11 @@ void TerminalWidget::handleTab() {
     }
 }
 
+/**
+ * @brief 鼠标点击事件处理
+ *
+ * 确保点击后光标不会移到提示符区域内
+ */
 void TerminalWidget::mousePressEvent(QMouseEvent *event) {
     QPlainTextEdit::mousePressEvent(event);
     QTextCursor cursor = textCursor();
